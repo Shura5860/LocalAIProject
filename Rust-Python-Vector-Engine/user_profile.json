@@ -1,0 +1,14 @@
+{
+  "name": "Shura",
+  "os": "Arch Linux",
+  "preferred_languages": [
+    "Rust",
+    "Python"
+  ],
+  "tone": "teknik, samimi, net ve doğrudan",
+  "custom_notes": [
+    "Performans ve bellek optimizasyonuna (SIMD, HNSW) çok önem verir.",
+    "Sisteminde Rust LLM ve Rust Vektör Veritabanı motorlarını kullanır."
+  ],
+  "favorite_editor": "Neovim & Antigravity IDE"
+}

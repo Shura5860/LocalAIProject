@@ -1,0 +1,36 @@
+# Python Virtual Environments & Packages
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+.wheels/
+
+# Rust Build Artifacts
+target/
+vector_engine/target/
+**/*.rs.bk
+
+# Database Dumps, Data Files & WAL Logs
+*.bin
+*.wal
+my_vector_db.bin
+vector_db.wal
+db_dump.bin
+
+# Logs & Temporary Files
+*.log
+scratch/
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

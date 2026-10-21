@@ -1,0 +1,22 @@
+/target
+**/*.rs.bk
+*.bin
+*.gguf
+*.safetensors
+*.bin
+*.pth
+*.onnx
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs & temp
+*.log
+scratch/

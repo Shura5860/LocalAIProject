@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rust-AI Studio | Hybrid RAG & Vector Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/index.css">
+</head>
+<body>
+
+<div class="app-container">
+  <!-- Top Navigation -->
+  <header class="top-nav">
+    <div class="brand-group">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <h1 class="brand-title">Rust-AI Studio</h1>
+      </div>
+      <span class="brand-badge">SIMD & HNSW</span>
+    </div>
+
+    <div class="nav-actions">
+      <div class="status-pill" style="background: rgba(99, 102, 241, 0.15); border-color: rgba(99, 102, 241, 0.4); color: #818cf8;">
+        <span style="font-size: 0.9rem;">🛡️</span>
+        <span>Etik & Güvenlik Kalkanı: Aktif</span>
+      </div>
+      <div class="status-pill" id="system-status-badge">
+        <span class="status-dot"></span>
+        <span id="system-status-text">Engine Online</span>
+      </div>
+      <a href="/docs" target="_blank" class="btn-outline" style="text-decoration: none;">API Docs (Swagger)</a>
+    </div>
+  </header>
+
+  <!-- Workspace Layout -->
+  <main class="main-workspace">
+    <!-- Sidebar / Knowledge Ingestion -->
+    <aside class="knowledge-sidebar">
+      <div class="panel-section">
+        <h2 class="section-title">
+          <span>📚</span> Bilgi Tabanına Veri Ekle
+        </h2>
+        <div class="input-group">
+          <label class="input-label" for="doc-content">Metin veya Belge Parçası (Chunk):</label>
+          <textarea id="doc-content" class="doc-textarea" placeholder="Ör: Şirketin 2026 iade politikası fatura ibrazı ile 30 gündür..."></textarea>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label" for="doc-category">Kategori / Etiket (Metadata):</label>
+          <input type="text" id="doc-category" class="meta-input" placeholder="Ör: politika, finans, teknik">
+        </div>
+
+        <button id="btn-ingest" class="btn-primary">
+          <span>⚡</span> HNSW Grafına İndeksle
+        </button>
+      </div>
+
+      <!-- Personalized Memory Section -->
+      <div class="panel-section">
+        <h2 class="section-title">
+          <span>🧠</span> Kişiselleştirilmiş Hafıza
+        </h2>
+        <div class="stats-card" style="gap: 8px;">
+          <div class="stat-item">
+            <span class="stat-label">Kullanıcı:</span>
+            <span class="stat-value" id="profile-name">Shura</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">İşletim Sistemi:</span>
+            <span class="stat-value" id="profile-os">Arch Linux</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Tercih Edilen:</span>
+            <span class="stat-value" style="color: #6366f1;">Rust, Python</span>
+          </div>
+        </div>
+
+        <div class="input-group" style="margin-top: 4px;">
+          <input type="text" id="memory-fact-input" class="meta-input" placeholder="Hafızaya bilgi ekle (Örn: 'Kahvemi sütsüz içerim')">
+          <button id="btn-remember" class="btn-outline" style="border-color: rgba(99, 102, 241, 0.4); color: #818cf8;">💾 Hafızaya Kaydet</button>
+        </div>
+      </div>
+
+      <!-- Vector DB Metrics -->
+      <div class="panel-section">
+        <h2 class="section-title">
+          <span>📊</span> Vektör Veritabanı Durumu
+        </h2>
+        <div class="stats-card">
+          <div class="stat-item">
+            <span class="stat-label">Aktif Doküman:</span>
+            <span class="stat-value" id="stat-doc-count">--</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">İndeks Mimarisi:</span>
+            <span class="stat-value" style="color: #818cf8;">instant-distance (HNSW)</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Embedding Modeli:</span>
+            <span class="stat-value" style="color: #a855f7;">MiniLM Multilingual</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">LLM Çekirdeği:</span>
+            <span class="stat-value" style="color: #10b981;">Rust AVX2/FMA SIMD</span>
+          </div>
+        </div>
+
+        <div class="btn-group-row">
+          <button id="btn-vacuum" class="btn-outline">🧹 Vacuum Temizle</button>
+          <button id="btn-save-db" class="btn-outline">💾 Diske Kaydet</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Interactive Chat Section -->
+    <section class="chat-section">
+      <div class="chat-history" id="chat-history">
+        <!-- Initial Welcome Message -->
+        <div class="chat-message ai">
+          <div class="avatar">🤖</div>
+          <div class="message-bubble">
+            <div class="bubble-content">
+              Merhaba! Ben <strong>Rust-LLM-Engine</strong> ve <strong>Rust Vektör Veritabanı (HNSW)</strong> hibrit altyapısıyla çalışan yerel yapay zeka asistanınızım.<br><br>
+              Sol panelden yeni belgeler ekleyebilir veya bana soru sorabilirsiniz. Sorunuzla alakalı dökümanları HNSW grafından anında çekip bağlam olarak kullanacağım!
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Message Input Bar -->
+      <div class="chat-input-container">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 0.8rem; color: var(--text-secondary); flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>🤖 Mod:</span>
+            <select id="chat-mode" style="background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-glass); border-radius: 6px; padding: 4px 8px; font-size: 0.8rem; outline: none; cursor: pointer;">
+              <option value="rag">📚 RAG Modu (HNSW Vektör Hafızası)</option>
+              <option value="agent">🛠️ Otonom Ajan Modu (Tekil Araç Çağrısı)</option>
+              <option value="react">🧠 ReAct Ajan Modu (Çok Adımlı Planlama)</option>
+            </select>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: #f59e0b; font-weight: 500;">
+              <input type="checkbox" id="chk-human-approval" checked style="accent-color: #f59e0b; cursor: pointer;">
+              🛡️ İnsan Onayı (HITL)
+            </label>
+            <span id="mode-hint" style="color: var(--text-muted); font-size: 0.75rem; margin-left: 6px;">Kritik eylemlerde izin ister</span>
+          </div>
+        </div>
+
+        <form id="chat-form" class="input-wrapper">
+          <input 
+            type="text" 
+            id="user-input" 
+            class="chat-input" 
+            placeholder="Bir soru sorun... (Örn: '125 * 8 kaçtır?' veya 'CPU durumu nedir?')" 
+            autocomplete="off"
+            required
+          />
+          <button type="submit" id="btn-send" class="send-btn" title="Gönder">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
