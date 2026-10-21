@@ -1,0 +1,14 @@
+# Rust / Cargo build outputs
+target/
+**/*.rs.bk
+
+# Node / Web dependencies
+node_modules/
+dist/
+
+# Logs & temp
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

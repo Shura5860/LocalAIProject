@@ -1,0 +1,72 @@
+# ==============================================================================
+# 🚫 GİZLİ & HASSAS DOSYALAR (Secrets, Credentials & Private Keys)
+# ==============================================================================
+license.json
+*.pem
+*.key
+*.token
+*.env
+*.env.*
+*.env.local
+*.secret
+server.log
+hitl_audit.log
+*.log
+
+# ==============================================================================
+# 🧠 BÜYÜK YZ MODELLERİ (GGUF, Safetensors, ONNX, PyTorch)
+# GitHub 100MB sınırını aşan veya yerel indirilen modeller
+# ==============================================================================
+models/
+**/models/
+*.gguf
+*.safetensors
+*.pth
+*.onnx
+
+# ==============================================================================
+# 💾 ÇALIŞMA ZAMANI VE VEKTÖR VT DUMP/LOGLARI
+# ==============================================================================
+*.wal
+my_vector_db.bin
+vector_db.wal
+db_dump.bin
+*.sqlite3
+*.db
+
+# ==============================================================================
+# 🐍 PYTHON DERLEME & SANAL ORTAMLAR
+# ==============================================================================
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.coverage
+dist/
+build/
+
+# ==============================================================================
+# 🦀 RUST & TAURI DERLEME ÇIKTILARI
+# ==============================================================================
+target/
+**/target/
+**/*.rs.bk
+release_bundle/
+desktop_app/src-tauri/target/
+node_modules/
+
+# ==============================================================================
+# 💻 İŞLETİM SİSTEMİ & EDİTÖR ÇÖPLERİ
+# ==============================================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+scratch/

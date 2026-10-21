@@ -1,0 +1,16 @@
+{
+  "name": "ai-personal-assistant-desktop",
+  "version": "1.0.0",
+  "description": "Claude Desktop-grade Autonomous AI Desktop App (OLED Dark Glassmorphism)",
+  "main": "src/index.html",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
