@@ -19,9 +19,8 @@ class TestStealthWebScraper(unittest.TestCase):
     def test_stealth_headers_generation(self):
         headers = get_stealth_headers()
         self.assertIn("User-Agent", headers)
-        self.assertIn("Accept-Language", headers)
-        self.assertIn("Upgrade-Insecure-Requests", headers)
-        self.assertTrue(headers["User-Agent"].startswith("Mozilla/5.0"))
+        self.assertIn("Accept", headers)
+        self.assertTrue("AURA-CORE" in headers["User-Agent"] or headers["User-Agent"].startswith("Mozilla/5.0"))
 
     def test_execute_read_web_page_direct(self):
         # Test on a reliable public test URL

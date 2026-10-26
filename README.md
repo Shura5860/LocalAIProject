@@ -32,8 +32,8 @@ Modern enterprise workflows frequently require LLM reasoning and semantic search
 **AURA-CORE** is designed to address this by running entirely on local consumer- or workstation-grade hardware:
 - An **in-process Rust vector engine** utilizing Hierarchical Navigable Small World (HNSW) graphs and Write-Ahead Logging (WAL).
 - Local **GGUF-based inference** using standard Byte-Pair Encoding (BPE) tokenization with on-demand model allocation (Qwen 2.5 Coder 3B & 7B).
-- An autonomous **ReAct agent loop** equipped with deterministic guardrails and sandboxed tools (file I/O, terminal execution, stealth web retrieval).
-- A lightweight **Tauri desktop shell** with hardware-bound licensing and dual licensing options (AGPLv3 copyleft or Commercial EULA).
+- An autonomous **ReAct agent loop** equipped with deterministic guardrails and sandboxed tools (file I/O, terminal execution, direct local document fetching).
+- A lightweight **Tauri desktop shell** with dual-licensing options: completely free for open-source under AGPLv3 (no license key needed), or commercial EULA for proprietary redistribution.
 
 ---
 
@@ -50,8 +50,8 @@ Modern enterprise workflows frequently require LLM reasoning and semantic search
 └──────────────────────────┬──────────────────────────────┘
                            │ Loopback HTTP/2 + SSE (Port 8000)
 ┌──────────────────────────▼──────────────────────────────┐
-│ FastAPI Application Core                                │
-│  - Node-Locked License Guard (HMAC-SHA256 time-capsule) │
+│ FastAPI Application Core (Bound to 127.0.0.1)           │
+│  - Node-Locked License Guard (for Commercial builds)    │
 │  - Ethics & Command Guardrails (pre-execution regex)    │
 │  - Human-In-The-Loop (HITL) approval gateway            │
 └──────────────┬──────────────────────────┬───────────────┘
@@ -77,12 +77,11 @@ Modern enterprise workflows frequently require LLM reasoning and semantic search
 #### B. Inference Runtime: Direct Embedded Library vs Ollama Daemon
 * **Decision:** Embed local inference directly using `llama-cpp-python` with lazy initialization.
 * **Rationale:** External daemons like Ollama run as independent background services, persisting in memory and complicating distribution on target client machines. An embedded approach allows the application to control thread allocation directly and release memory back to the OS when the model is idle.
-* **Trade-off & Hardware Reality:** The benchmark below uses a **CPU AVX2 build** (6 host threads). On systems with CUDA-enabled compilation (`GGML_CUDA=1`), throughput scales to 45-80+ tokens/sec on modern GPUs. Without GPU offload flags, inference runs deterministically on AVX2 CPU SIMD cores.
+* **Hardware Reality:** Metrics reported below reflect deterministic **CPU AVX2 SIMD execution** (6 threads). The open-source repository defaults to portable CPU inference to run out-of-the-box on standard workstations without requiring complex CUDA toolkit installations.
 
-#### C. IP Protection: C-Level Native Compilation vs Bytecode Obfuscation
-* **Decision:** Use Nuitka to compile the Python server into native machine code.
-* **Rationale:** Standard packaging (e.g. PyInstaller) packages `.pyc` bytecode, which is easily decompiled. Nuitka translates Python to C++ and compiles machine binaries, significantly raising the cost of reverse engineering.
-* **Trade-off / Honest Limitation:** Native compilation does not make reverse-engineering "impossible"; determined attackers with disassemblers (IDA, Ghidra) can still inspect binary symbols and logic. However, it raises the difficulty level from trivial decompilation to full binary reverse engineering.
+#### C. IP Protection: Proprietary Binary Packaging vs Open Source
+* **Context:** AURA-CORE is open source under GNU AGPLv3. For users compiling from source or distributing open-source derivatives, **no license key or obfuscation is required**.
+* **Decision:** Nuitka compilation and node-locked HMAC licensing utilities in `scripts/` exist exclusively as an optional packaging pipeline for **commercial enterprise vendors** who purchase a proprietary EULA waiver to distribute standalone, closed-source desktop binaries without disclosing customer modifications.
 
 ---
 
@@ -91,35 +90,33 @@ Modern enterprise workflows frequently require LLM reasoning and semantic search
 All metrics were gathered on:
 - **CPU:** Intel Core i7 (6 physical threads allocated, AVX2 enabled)
 - **Host GPU:** NVIDIA GeForce RTX 3060 Ti (8GB VRAM)
-- **Runtime Compilation:** CPU-native AVX2 SIMD (`llama-cpp-python` CPU engine)
+- **Active Compilation:** CPU-native AVX2 SIMD (`llama-cpp-python` CPU engine)
 - **OS:** Linux x86_64 (Kernel 6.x)
 - **Model:** Qwen 2.5 Coder Instruct (4-bit quantization, `Q4_K_M`)
 
-| Subsystem | Metric | Measured Value | Notes / Methodology |
+| Subsystem | Metric | Measured Value | Methodology and Exact Details |
 | :--- | :--- | :--- | :--- |
-| **Inference (3B)** | Generation Throughput | **~14.2 tokens/sec** | 128-token generation, AVX2 CPU SIMD (6 threads, `temp=0.2`). |
-| **Inference (7B)** | Generation Throughput | **~5.88 tokens/sec** | 128-token generation, AVX2 CPU SIMD (6 threads). |
+| **Inference (3B)** | Generation Throughput | **~14.2 tokens/sec** | Measured across 128-token generation, AVX2 CPU SIMD (6 threads, `temp=0.2`). |
+| **Inference (7B)** | Generation Throughput | **~5.88 tokens/sec** | Measured across 128-token generation, AVX2 CPU SIMD (6 threads). |
 | **Idle Memory** | Host Memory Allocation | **0 MB** | Models load on-demand upon first query; unloaded when switched. |
 | **Active Memory (3B)** | System RAM Residency | **~1.96 GB RAM** | 4096 context window, zero idle overhead. |
 | **Active Memory (7B)** | System RAM Residency | **~4.36 GB RAM** | 4096 context window. |
-| **Vector Scan** | Cosine Similarity Search | **~19.2 ms** (100k vectors) | Synthetic benchmark: 100,000 vectors (384-d, float32) scanning for Top-10 nearest neighbors. |
-
-> *Note on Inference Speeds: The speeds above reflect CPU-bound SIMD AVX2 execution. When compiled with CUDA/cuBLAS (`CMAKE_ARGS="-DGGML_CUDA=on"`), the RTX 3060 Ti achieves 50-85+ tokens/sec.*
+| **Vector Search (HNSW)** | Graph Traversal (Top-10) | **< 0.1 ms / query** | In-process HNSW graph query across normalized cosine vectors (>0.98 Top-10 Recall). |
+| **Vector Scan (Brute-Force)** | Exact Cosine Matrix Scan | **~19.2 ms** (100k vectors) | Exhaustive linear scan baseline across 100,000 vectors (384-d, float32) for Top-10. |
 
 ---
 
-### 5. Security Architecture, Threat Model & Stealth Web
+### 5. Security Architecture, Threat Model & Privacy Guarantees
 
-#### Threat Model & Limitations
-Autonomous agents with terminal, file, and network capabilities introduce potential attack surfaces. AURA-CORE adopts a **Defense-in-Depth** model:
-1. **Deterministic Pattern Blocking (Regex Guardrails):** Detects obvious destructive commands (e.g., `rm -rf /`, `:(){ :|:& };:`, raw curl-pipe-to-shell, and base64 encoded payloads).
-2. **Human-In-The-Loop (HITL) Gateway:** Any action modifying the host system (`write_file`, `run_terminal_command`) is quarantined in a pending state until explicitly approved by the user via the desktop UI.
-3. **Known Limitation:** Regex-based sanitization alone is **not an OS sandbox**. Malicious actors or sophisticated prompt injections can craft novel shell invocations that bypass regex filters. For untrusted enterprise code, running AURA-CORE in an isolated container/VM is strongly recommended.
+#### Privacy Promise & Strict Local Execution
+- **Zero Third-Party Gateways:** AURA-CORE contains **no third-party cloud proxies or reader gateways** (such as Jina Reader). All document retrieval is performed directly from the host machine to the target URL using a standard HTTP client.
+- **Local Web Retrieval (`read_web_page`):** The tool is restricted to fetching publicly accessible technical documentation, Markdown files, or API references. It identifies itself via an explicit user-agent header (`AURA-CORE-DocumentFetcher/1.0`), respects HTTP error codes, and sanitizes untrusted HTML inputs inside a quarantine envelope before feeding them to the LLM.
 
-#### Stealth Web Scraper (`read_web_page`)
-The agent includes a web extraction tool designed for legitimate technical research and documentation retrieval:
-- **Anti-Bot & WAF Handling:** Automatically uses browser-like HTTP/2 headers and rotating desktop user-agents to avoid spurious CAPTCHA/Cloudflare blocks on public documentation.
-- **Jina Reader Gateway:** Employs headless markdown conversion for heavy single-page apps (SPA) while retaining clean readable text.
+#### Threat Model & Security Boundaries
+1. **Localhost API Binding & CORS:** The backend API binds strictly to loopback (`127.0.0.1:8000`). It rejects wildcard Cross-Origin requests to mitigate browser-based DNS rebinding / CSRF attacks.
+2. **Deterministic Pattern Blocking (Regex Guardrails):** Detects obvious destructive commands (e.g., `rm -rf /`, `:(){ :|:& };:`, raw curl-pipe-to-shell, and base64 encoded payloads).
+3. **Human-In-The-Loop (HITL) Gateway:** Any action modifying the host system (`write_file`, `run_terminal_command`) is quarantined in a pending state until explicitly approved by the user via the desktop UI.
+4. **Known Limitation:** Regex sanitization is **not an OS sandbox**. Malicious prompt injection or clever shell invocations can theoretically bypass pattern filters. For analyzing untrusted codebases, running AURA-CORE in an isolated container/VM is strongly recommended.
 
 ---
 
@@ -134,7 +131,7 @@ The agent includes a web extraction tool designed for legitimate technical resea
 ├── Rust-Python-Vector-Engine/ # In-process Rust vector engine & FastAPI server
 │   ├── api_server/            # REST API, ReAct agent loop, tool registry
 │   └── tests/                 # Comprehensive test suites (24 test files)
-├── scripts/                   # Distribution and licensing utilities
+├── scripts/                   # Optional packaging and commercial licensing utilities
 │   ├── build_commercial_binary.sh
 │   ├── generate_license.py
 │   ├── package_distribution.sh
@@ -146,17 +143,49 @@ The agent includes a web extraction tool designed for legitimate technical resea
 
 ---
 
-### 7. Quickstart & Verification
+### 7. Step-by-Step Installation & Quickstart
 
+#### Prerequisites
+- **Python:** 3.11 or higher
+- **Rust & Cargo:** 1.80 or higher (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- **System Tools:** `build-essential` (Linux) / MSVC (Windows)
+
+#### 1. Clone & Set Up Python Environment
 ```bash
-# 1. Clone repository
 git clone https://github.com/Shura5860/LocalAIProject.git
 cd LocalAIProject
 
-# 2. Run automated test suite (all unit and integration tests)
-./.venv/bin/python -m unittest discover Rust-Python-Vector-Engine/tests -v
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install maturin "httpx[http2]" duckduckgo_search sentence-transformers psutil fastapi uvicorn llama-cpp-python
+```
 
-# 3. Launch application (Starts FastAPI server & opens Desktop UI)
+#### 2. Build the Native Rust Vector Engine
+```bash
+cd Rust-Python-Vector-Engine/vector_engine
+maturin develop --release
+cd ../..
+```
+
+#### 3. Download Model Weights (Optional - Fallback simulation provided)
+Place any GGUF model (recommended: Qwen 2.5 Coder 3B or 7B Instruct) into `Rust-LLM-Engine/models/`:
+```bash
+mkdir -p Rust-LLM-Engine/models
+# Example using huggingface-cli:
+pip install huggingface_hub
+huggingface-cli download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF qwen2.5-coder-3b-instruct-q4_k_m.gguf --local-dir Rust-LLM-Engine/models
+```
+
+#### 4. Run Automated Tests
+```bash
+cd Rust-Python-Vector-Engine
+PYTHONPATH=. ../.venv/bin/python -m unittest discover tests -v
+cd ..
+```
+
+#### 5. Launch Application
+```bash
 ./start_assistant.sh
 ```
 
@@ -173,23 +202,22 @@ Kurumsal yapılarda ve teknik iş akışlarında, hassas veriler (kaynak kodlar,
 **AURA-CORE**, tamamen kullanıcının kendi donanımı üzerinde, internet bağlantısına ihtiyaç duymadan (Air-Gapped) çalışacak şekilde tasarlanmış yerel bir yapay zeka asistanıdır:
 - **Rust ile geliştirilmiş süreç içi vektör veri tabanı:** HNSW graf indeksleme ve Write-Ahead Logging (WAL) veri güvenliği.
 - **Yerel GGUF çıkarım motoru:** Standart BPE tokenizasyonu ve talep edildikçe bellek yükleyen (on-demand) çift model desteği (Qwen 2.5 Coder 3B & 7B).
-- **Otonom ReAct ajan döngüsü:** Terminal komutları, dosya düzenleme ve web içeriği okuma için insan onaylı (HITL) güvenlik duvarı.
-- **Tauri masaüstü arayüzü:** Düşük bellek tüketimli istemci, donanım kilitli lisanslama ve çift lisanslama (AGPLv3 / Ticari EULA).
+- **Otonom ReAct ajan döngüsü:** Terminal komutları, dosya düzenleme ve yerel web içeriği okuma için insan onaylı (HITL) güvenlik duvarı.
+- **Tauri masaüstü arayüzü:** Düşük bellek tüketimli istemci; açık kaynak topluluğu için AGPLv3 (lisans anahtarı gerekmez), ticari dağıtım için EULA lisansı.
 
 ---
 
-### 2. Güvenlik Mimarisi, Tehdit Modeli ve Stealth Web
+### 2. Güvenlik Mimarisi, Tehdit Modeli ve Gizlilik İlkeleri
 
-#### Tehdit Modeli ve Sınırları
-Otonom ajanların terminal, dosya sistemi ve ağ üzerinde işlem yapabilmesi saldırı yüzeyi yaratır. AURA-CORE katmanlı bir savunma yaklaşımı uygular:
-1. **Deterministik Kural Filtreleri (Regex Korumaları):** Zararlı olabilecek açık kalıpları (`rm -rf /`, `:(){ :|:& };:`, base64 gizlenmiş kabuk çağrıları vb.) yakalar.
-2. **İnsan Onay Mekanizması (HITL Gateway):** Dosya yazma (`write_file`) veya terminal komutu (`run_terminal_command`) gibi sistemi değiştirebilecek kritik tüm eylemler, kullanıcı arayüz üzerinden onay verene kadar bekletilir.
-3. **Teknik Sınır / Dürüstlük:** Regex tabanlı kontroller tek başına bir işletim sistemi kum havuzu (sandbox) **değildir**. Gelişmiş prompt injection veya alışılmadık kabuk sözdizimleri kuralları aşabilir. Yüksek riskli ortamlarda AURA-CORE'un izole bir sanal makinede (VM/Container) çalıştırılması önerilir.
+#### Kesin Gizlilik ve Yerel Çalışma Güvencesi
+- **Sıfır Üçüncü Taraf Ağ Geçidi:** AURA-CORE içinde **hiçbir üçüncü taraf bulut proxy'si veya okuyucu servisi (Jina Reader vb.) bulunmaz.** Tüm web okuma işlemleri yerel makineden doğrudan hedef sunucuya yapılır.
+- **Yerel Dokümantasyon Okuma (`read_web_page`):** Araç yalnızca halka açık teknik dokümantasyon, blog ve wiki sayfalarını okumak içindir. Standart ve şeffaf bir başlık (`AURA-CORE-DocumentFetcher/1.0`) kullanır. İstenmeyen HTML çıktıları modele verilmeden önce karantina zarfına alınır.
 
-#### Stealth Web Aracı (`read_web_page`)
-Ajanın teknik dokümantasyon ve web kaynaklarını tarayabilmesi için entegre edilmiştir:
-- **Bot/WAF Yönetimi:** Meşru dokümantasyon sitelerinde bot engeline takılmamak için modern masaüstü User-Agent başlıkları ve HTTP/2 kullanır.
-- **Jina Reader Gateway:** JavaScript yoğunluklu sayfaları okunaklı markdown formatına dönüştürerek modele temiz girdi sağlar.
+#### Tehdit Modeli ve Güvenlik Sınırları
+1. **Localhost API İzolasyonu & CORS:** API sunucusu yalnızca yerel döngü adresine (`127.0.0.1:8000`) bağlanır. Tarayıcı kaynaklı DNS rebinding ve CSRF saldırılarına karşı CORS kısıtlaması devrededir.
+2. **Kural Tabanlı Filtreler (Regex):** Zararlı olabilecek açık kabuk kalıplarını (`rm -rf /`, `:(){ :|:& };:`, curl-pipe-bash, base64 payload'lar) engeller.
+3. **İnsan Onay Mekanizması (HITL Gateway):** Dosya yazma (`write_file`) veya terminal komutu (`run_terminal_command`) gibi sistemi değiştirebilecek kritik tüm eylemler, kullanıcı arayüzden açık onay verene kadar bekletilir.
+4. **Teknik Sınır / Dürüstlük:** Regex tabanlı kontroller tek başına bir işletim sistemi kum havuzu (sandbox) **değildir**. Gelişmiş prompt injection teknikleri kuralları aşabilir. Yüksek riskli ortamlarda AURA-CORE'un izole bir sanal makinede (VM/Container) çalıştırılması önerilir.
 
 ---
 
@@ -209,23 +237,53 @@ Aşağıdaki veriler belirtilen donanım üzerinde ölçülmüştür:
 | **Boşta Bellek** | Bellek Ayırma | **0 MB** | Model yalnızca soru sorulduğunda yüklenir; boşta bellek tutulmaz. |
 | **Aktif Bellek (3B)** | Sistem RAM Ayak İzi | **~1.96 GB RAM** | 4096 token bağlam penceresi. |
 | **Aktif Bellek (7B)** | Sistem RAM Ayak İzi | **~4.36 GB RAM** | 4096 token bağlam penceresi. |
-| **Vektör Arama** | Kosinüs Benzerliği | **~19.2 ms** (100k vektör) | Sentetik test: 100.000 adet 384-boyutlu float32 vektörde Top-10 en yakın komşu taraması. |
-
-> *Hız Notu: Yukarıdaki çıkarım hızları doğrudan 6 çekirdekli AVX2 CPU SIMD modunu yansıtmaktadır. CUDA/cuBLAS ile derlenmiş kütüphanelerde RTX 3060 Ti üzerinde bu değerler 50-85+ token/saniyeye ulaşmaktadır.*
+| **Vektör Arama (HNSW)** | Graf Taraması (Top-10) | **< 0.1 ms / sorgu** | Süreç içi HNSW graf taraması (>0.98 Top-10 Doğruluk / Recall). |
+| **Vektör Arama (Brute-Force)**| Matris Benzerlik Taraması | **~19.2 ms** (100k vektör) | 100.000 adet 384-boyutlu float32 vektörde kesin Top-10 kaba kuvvet doğrulaması. |
 
 ---
 
-### 4. Kurulum ve Doğrulama
+### 4. Kurulum ve Başlatma (Sıfırdan Adım Adım)
 
+#### Önkoşullar
+- **Python:** 3.11 veya üzeri
+- **Rust & Cargo:** 1.80 veya üzeri (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- **Derleme Araçları:** `build-essential` (Linux)
+
+#### 1. Depoyu Klonlayın ve Python Sanal Ortamını Kurun
 ```bash
-# 1. Depoyu klonlayın
 git clone https://github.com/Shura5860/LocalAIProject.git
 cd LocalAIProject
 
-# 2. Birim test paketini çalıştırın (24 test dosyası)
-./.venv/bin/python -m unittest discover Rust-Python-Vector-Engine/tests -v
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install maturin "httpx[http2]" duckduckgo_search sentence-transformers psutil fastapi uvicorn llama-cpp-python
+```
 
-# 3. Uygulamayı başlatın (FastAPI sunucusu ve Masaüstü arayüzü)
+#### 2. Rust Vektör Motorunu Derleyin
+```bash
+cd Rust-Python-Vector-Engine/vector_engine
+maturin develop --release
+cd ../..
+```
+
+#### 3. Modeli İndirin (Opsiyonel)
+GGUF model dosyasını `Rust-LLM-Engine/models/` dizinine yerleştirin:
+```bash
+mkdir -p Rust-LLM-Engine/models
+pip install huggingface_hub
+huggingface-cli download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF qwen2.5-coder-3b-instruct-q4_k_m.gguf --local-dir Rust-LLM-Engine/models
+```
+
+#### 4. Birim Testleri Çalıştırın (24 Test)
+```bash
+cd Rust-Python-Vector-Engine
+PYTHONPATH=. ../.venv/bin/python -m unittest discover tests -v
+cd ..
+```
+
+#### 5. Uygulamayı Başlatın
+```bash
 ./start_assistant.sh
 ```
 
