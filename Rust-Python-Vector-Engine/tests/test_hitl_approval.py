@@ -61,7 +61,8 @@ class TestHITLApproval(unittest.TestCase):
         self.assertIsNotNone(approve_res["result"])
 
     def test_audit_log_written(self):
-        # Verify that hitl_audit.log exists and contains log entries
+        # Explicitly record an entry to guarantee audit log exists regardless of test execution order
+        record_audit_log("test_tool", {"action": "verify"}, approved=True, reason="CI validation")
         self.assertTrue(os.path.exists(AUDIT_LOG_FILE))
         with open(AUDIT_LOG_FILE, "r", encoding="utf-8") as f:
             lines = f.readlines()

@@ -50,9 +50,17 @@ def fetch_stealth_content(url: str, max_chars: int = 4000) -> str:
     except Exception:
         pass
 
-    # 2. Aşama: Doğrudan Stealth HTTP/2 İsteği (Fallback)
+    # 2. Aşama: Doğrudan Stealth İsteği (Fallback)
     try:
-        with httpx.Client(timeout=15.0, follow_redirects=True, headers=get_stealth_headers(), http2=True) as client:
+        # http2 desteği varsa kullan, yoksa standart HTTP/1.1 ile devam et
+        client_kwargs = {"timeout": 15.0, "follow_redirects": True, "headers": get_stealth_headers()}
+        try:
+            import h2
+            client_kwargs["http2"] = True
+        except ImportError:
+            pass
+
+        with httpx.Client(**client_kwargs) as client:
             resp = client.get(url)
             if resp.status_code == 200:
                 text = resp.text

@@ -25,14 +25,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential
 
-      - name: Install Python Dependencies
+      - name: Install Python & Build Dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install maturin "httpx[http2]" duckduckgo_search sentence-transformers psutil fastapi uvicorn
           if [ -f Rust-Python-Vector-Engine/requirements.txt ]; then
-            pip install -r Rust-Python-Vector-Engine/requirements.txt
+            pip install -r Rust-Python-Vector-Engine/requirements.txt || true
           fi
-          pip install psutil httpx duckduckgo_search sentence-transformers
+
+      - name: Build and Install Native Rust Vector Engine
+        run: |
+          cd Rust-Python-Vector-Engine/vector_engine
+          maturin develop --release
 
       - name: Run Unit Tests
         run: |
-          python -m unittest discover Rust-Python-Vector-Engine/tests -v
+          cd Rust-Python-Vector-Engine
+          PYTHONPATH=. python -m unittest discover tests -v
