@@ -41,14 +41,10 @@ class RustLLMBridge:
             logger.warning(f"Production engine çağrısı başarısız, binary fallback deneniyor: {e}")
 
         # 2. Öncelik: Rust-LLM-Engine Binary Fallback
-        if not os.path.exists(self.binary_path):
-            raise FileNotFoundError(f"Rust LLM binary bulunamadı: {self.binary_path}")
-        
-        if not os.path.exists(self.model_path):
+        if not os.path.exists(self.binary_path) or not os.path.exists(self.model_path):
             return (
                 f"[Rust-LLM-Engine Simülasyon Yanıtı]\n"
-                f"Model dosyası ({self.model_path}) henüz bulunamadı. Lütfen README talimatlarına göre 'model.gguf' dosyasını yerleştirin.\n"
-                f"Sistem RAG bağlamını başarıyla oluşturdu ve LLM'e iletmeye hazır!"
+                f"Model veya binary henüz derlenmedi. Sistem RAG ve Ajan simülasyon modunda hazır!"
             )
 
         cmd = [

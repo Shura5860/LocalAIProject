@@ -9,6 +9,10 @@ from api_server.app.services.memory_service import memory_service
 
 class TestModelAndMemorySecurity(unittest.TestCase):
     def test_model_3b_integrity(self):
+        active_info = model_service.catalog.get("qwen2.5-coder-3b")
+        file_path = os.path.join(model_service.models_dir, active_info["filename"])
+        if not os.path.exists(file_path):
+            self.skipTest("3B model ağırlıkları yerel diskte mevcut değil (CI ortamı).")
         res = model_service.verify_model_integrity("qwen2.5-coder-3b")
         self.assertTrue(res["verified"], f"3B model doğrulaması başarısız: {res}")
         self.assertEqual(res["status"], "SECURE_INTEGRITY_VERIFIED")

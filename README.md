@@ -101,22 +101,25 @@ All metrics were gathered on:
 | **Idle Memory** | Host Memory Allocation | **0 MB** | Models load on-demand upon first query; unloaded when switched. |
 | **Active Memory (3B)** | System RAM Residency | **~1.96 GB RAM** | 4096 context window, zero idle overhead. |
 | **Active Memory (7B)** | System RAM Residency | **~4.36 GB RAM** | 4096 context window. |
-| **Vector Search (HNSW)** | Graph Traversal (Top-10) | **< 0.1 ms / query** | In-process HNSW graph query across normalized cosine vectors (>0.98 Top-10 Recall). |
-| **Vector Scan (Brute-Force)** | Exact Cosine Matrix Scan | **~19.2 ms** (100k vectors) | Exhaustive linear scan baseline across 100,000 vectors (384-d, float32) for Top-10. |
+| **Vector Search (HNSW)** | Graph Traversal (Top-10) | **< 0.1 ms / query** | In-process HNSW graph query (`instant-distance 0.6`, M=16, ef_construction=200, ef_search=64, 10k synthetic 384-d normalized float32 vectors, >0.98 Top-10 Recall). |
+| **Vector Scan (Brute-Force)** | Exact Cosine Matrix Scan | **~19.2 ms** (100k vectors) | Exhaustive linear baseline across 100,000 synthetic vectors (384-d, float32) for Top-10. |
 
 ---
 
 ### 5. Security Architecture, Threat Model & Privacy Guarantees
 
-#### Privacy Promise & Strict Local Execution
-- **Zero Third-Party Gateways:** AURA-CORE contains **no third-party cloud proxies or reader gateways** (such as Jina Reader). All document retrieval is performed directly from the host machine to the target URL using a standard HTTP client.
-- **Local Web Retrieval (`read_web_page`):** The tool is restricted to fetching publicly accessible technical documentation, Markdown files, or API references. It identifies itself via an explicit user-agent header (`AURA-CORE-DocumentFetcher/1.0`), respects HTTP error codes, and sanitizes untrusted HTML inputs inside a quarantine envelope before feeding them to the LLM.
+#### Privacy Promise & External Network Policy
+- **Core Engine is 100% On-Premise:** LLM inference, embedding generation, RAG document indexing, and conversation state never leave the host system.
+- **External Web Search (`duckduckgo_search`):** If the user explicitly asks the agent to perform a live internet search (`web_search`), sanitized queries are sent directly to the DuckDuckGo API. **Air-Gapped Mode:** Setting `ENABLE_WEB_SEARCH=false` completely deactivates external search capabilities, ensuring zero outbound search packets.
+- **Direct Web Retrieval (`read_web_page`):** Fetches publicly accessible technical documentation directly from the target server using standard HTTP headers (`AURA-CORE-DocumentFetcher/1.0`). No third-party reader gateways (e.g. Jina) or cloud proxies are utilized.
 
 #### Threat Model & Security Boundaries
 1. **Localhost API Binding & CORS:** The backend API binds strictly to loopback (`127.0.0.1:8000`). It rejects wildcard Cross-Origin requests to mitigate browser-based DNS rebinding / CSRF attacks.
 2. **Deterministic Pattern Blocking (Regex Guardrails):** Detects obvious destructive commands (e.g., `rm -rf /`, `:(){ :|:& };:`, raw curl-pipe-to-shell, and base64 encoded payloads).
 3. **Human-In-The-Loop (HITL) Gateway:** Any action modifying the host system (`write_file`, `run_terminal_command`) is quarantined in a pending state until explicitly approved by the user via the desktop UI.
-4. **Known Limitation:** Regex sanitization is **not an OS sandbox**. Malicious prompt injection or clever shell invocations can theoretically bypass pattern filters. For analyzing untrusted codebases, running AURA-CORE in an isolated container/VM is strongly recommended.
+4. **Known Limitations & Threat Vectors:**
+   - **Regex is not an OS sandbox:** Malicious prompt injection or clever shell invocations can theoretically bypass pattern filters.
+   - **Outbound Data Exfiltration via URL Query Parameters:** In untrusted code environments, prompt injection attacks could attempt to append sensitive tokens to external URLs passed to `read_web_page`. In enterprise security deployments, outbound requests should be restricted to a corporate domain allowlist or placed under HITL confirmation.
 
 ---
 
@@ -145,10 +148,20 @@ All metrics were gathered on:
 
 ### 7. Step-by-Step Installation & Quickstart
 
+> **Platform Support Note:** Tested on **Linux only** (Arch Linux, Ubuntu 22.04/24.04, Fedora 39/40).
+
 #### Prerequisites
 - **Python:** 3.11 or higher
 - **Rust & Cargo:** 1.80 or higher (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- **System Tools:** `build-essential` (Linux) / MSVC (Windows)
+- **System Libraries (Linux Desktop & Build):**
+  ```bash
+  # Debian / Ubuntu:
+  sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+  # Fedora:
+  sudo dnf install -y gcc gcc-c++ webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel
+  # Arch Linux:
+  sudo pacman -S base-devel webkit2gtk-4.1 gtk3 libayatana-appindicator
+  ```
 
 #### 1. Clone & Set Up Python Environment
 ```bash
@@ -209,15 +222,18 @@ Kurumsal yapılarda ve teknik iş akışlarında, hassas veriler (kaynak kodlar,
 
 ### 2. Güvenlik Mimarisi, Tehdit Modeli ve Gizlilik İlkeleri
 
-#### Kesin Gizlilik ve Yerel Çalışma Güvencesi
-- **Sıfır Üçüncü Taraf Ağ Geçidi:** AURA-CORE içinde **hiçbir üçüncü taraf bulut proxy'si veya okuyucu servisi (Jina Reader vb.) bulunmaz.** Tüm web okuma işlemleri yerel makineden doğrudan hedef sunucuya yapılır.
-- **Yerel Dokümantasyon Okuma (`read_web_page`):** Araç yalnızca halka açık teknik dokümantasyon, blog ve wiki sayfalarını okumak içindir. Standart ve şeffaf bir başlık (`AURA-CORE-DocumentFetcher/1.0`) kullanır. İstenmeyen HTML çıktıları modele verilmeden önce karantina zarfına alınır.
+#### Kesin Gizlilik ve Harici Ağ Politikası
+- **Çekirdek Sistem %100 Yereldir:** LLM çıkarımı, embedding üretimi, RAG indeksleme ve konuşma geçmişi asla yerel cihazdan dışarı çıkmaz.
+- **Harici Web Araması (`duckduckgo_search`):** Kullanıcı ajandan açıkça internet araması talep ederse (`web_search`), arındırılmış sorgular DuckDuckGo API'sine iletilir. **Tam Air-Gapped Mod:** `ENABLE_WEB_SEARCH=false` ayarlandığında canlı web araması tamamen kapatılır ve dışarı sıfır arama paketi gider.
+- **Doğrudan Web İçeriği Alma (`read_web_page`):** Halka açık teknik dokümantasyonları doğrudan hedef sunucudan standart başlıklarla (`AURA-CORE-DocumentFetcher/1.0`) çeker; üçüncü taraf okuyucu gateway veya proxy servisleri (Jina vb.) kullanılmaz.
 
 #### Tehdit Modeli ve Güvenlik Sınırları
 1. **Localhost API İzolasyonu & CORS:** API sunucusu yalnızca yerel döngü adresine (`127.0.0.1:8000`) bağlanır. Tarayıcı kaynaklı DNS rebinding ve CSRF saldırılarına karşı CORS kısıtlaması devrededir.
 2. **Kural Tabanlı Filtreler (Regex):** Zararlı olabilecek açık kabuk kalıplarını (`rm -rf /`, `:(){ :|:& };:`, curl-pipe-bash, base64 payload'lar) engeller.
 3. **İnsan Onay Mekanizması (HITL Gateway):** Dosya yazma (`write_file`) veya terminal komutu (`run_terminal_command`) gibi sistemi değiştirebilecek kritik tüm eylemler, kullanıcı arayüzden açık onay verene kadar bekletilir.
-4. **Teknik Sınır / Dürüstlük:** Regex tabanlı kontroller tek başına bir işletim sistemi kum havuzu (sandbox) **değildir**. Gelişmiş prompt injection teknikleri kuralları aşabilir. Yüksek riskli ortamlarda AURA-CORE'un izole bir sanal makinede (VM/Container) çalıştırılması önerilir.
+4. **Bilinen Kısıtlamalar ve Tehdit Vektörleri:**
+   - **Regex tek başına işletim sistemi sandbox'ı değildir:** Gelişmiş prompt injection teknikleri veya karmaşık kabuk zincirleri kural filtrelerini aşabilir.
+   - **URL Query Parametreleri Üzerinden Veri Sızdırma:** Güvenilmeyen kaynaklarda çalışırken prompt injection saldırıları hassas verileri URL parametresi olarak `read_web_page` aracına ekletmeye çalışabilir. Kurumsal ortamlarda giden isteklerin alan adı beyaz listesine (Allowlist) bağlanması veya HITL onayına tabi tutulması tavsiye edilir.
 
 ---
 
@@ -237,17 +253,27 @@ Aşağıdaki veriler belirtilen donanım üzerinde ölçülmüştür:
 | **Boşta Bellek** | Bellek Ayırma | **0 MB** | Model yalnızca soru sorulduğunda yüklenir; boşta bellek tutulmaz. |
 | **Aktif Bellek (3B)** | Sistem RAM Ayak İzi | **~1.96 GB RAM** | 4096 token bağlam penceresi. |
 | **Aktif Bellek (7B)** | Sistem RAM Ayak İzi | **~4.36 GB RAM** | 4096 token bağlam penceresi. |
-| **Vektör Arama (HNSW)** | Graf Taraması (Top-10) | **< 0.1 ms / sorgu** | Süreç içi HNSW graf taraması (>0.98 Top-10 Doğruluk / Recall). |
-| **Vektör Arama (Brute-Force)**| Matris Benzerlik Taraması | **~19.2 ms** (100k vektör) | 100.000 adet 384-boyutlu float32 vektörde kesin Top-10 kaba kuvvet doğrulaması. |
+| **Vektör Arama (HNSW)** | Graf Taraması (Top-10) | **< 0.1 ms / sorgu** | Süreç içi HNSW graf taraması (`instant-distance 0.6`, M=16, ef_construction=200, ef_search=64, 10k sentetik vektör, >0.98 Top-10 Doğruluk / Recall). |
+| **Vektör Arama (Brute-Force)**| Matris Benzerlik Taraması | **~19.2 ms** (100k vektör) | 100.000 adet 384-boyutlu sentetik float32 vektörde kesin Top-10 kaba kuvvet referansı. |
 
 ---
 
 ### 4. Kurulum ve Başlatma (Sıfırdan Adım Adım)
 
+> **Platform Notu:** Yalnızca **Linux üzerinde test edilmiştir** (Arch Linux, Ubuntu 22.04/24.04, Fedora 39/40).
+
 #### Önkoşullar
 - **Python:** 3.11 veya üzeri
 - **Rust & Cargo:** 1.80 veya üzeri (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- **Derleme Araçları:** `build-essential` (Linux)
+- **Sistem Kütüphaneleri (Masaüstü Arayüzü & Derleme):**
+  ```bash
+  # Debian / Ubuntu:
+  sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+  # Fedora:
+  sudo dnf install -y gcc gcc-c++ webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel
+  # Arch Linux:
+  sudo pacman -S base-devel webkit2gtk-4.1 gtk3 libayatana-appindicator
+  ```
 
 #### 1. Depoyu Klonlayın ve Python Sanal Ortamını Kurun
 ```bash

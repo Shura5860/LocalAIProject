@@ -51,9 +51,13 @@ from api_server.app.core.guardrails import sanitize_web_query
 
 @tool(
     name="web_search",
-    description="DuckDuckGo üzerinden internette canlı arama yapar. Güncel olaylar, hava durumu, haberler veya genel web aramaları için kullanılır."
+    description="DuckDuckGo üzerinden internette canlı arama yapar. Güncel olaylar, hava durumu veya genel web aramaları için kullanılır. ENABLE_WEB_SEARCH=false ile tamamen devre dışı bırakılabilir."
 )
 def web_search(query: str, max_results: int = 3) -> List[Dict[str, str]]:
+    import os
+    if os.getenv("ENABLE_WEB_SEARCH", "true").lower() in ("false", "0", "no"):
+        return [{"snippet": "Canlı web araması kullanıcı yapılandırması tarafından devre dışı bırakıldı (Tamamen Yerel / Air-Gapped Mod)."}]
+
     try:
         # Etik & Gizlilik Kalkanı: Sorgudan hassas verileri arındır
         safe_query = sanitize_web_query(query)
