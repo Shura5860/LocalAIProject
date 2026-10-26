@@ -35,8 +35,7 @@ jobs:
 
       - name: Build and Install Native Rust Vector Engine
         run: |
-          cd Rust-Python-Vector-Engine/vector_engine
-          maturin develop --release
+          pip install ./Rust-Python-Vector-Engine/vector_engine
 
       - name: Run Unit Tests
         run: |
