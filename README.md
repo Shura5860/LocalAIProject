@@ -196,6 +196,7 @@ cd Rust-Python-Vector-Engine
 PYTHONPATH=. ../.venv/bin/python -m unittest discover tests -v
 cd ..
 ```
+> **CI & Test Scope Note:** The GitHub Actions CI pipeline runs unit and integration tests for the in-process Rust vector database (PyO3 HNSW), ethics guardrails, HITL gateway, and memory protection. Tests requiring 2–4GB local GGUF weights (`test_production_engine`, `test_model_3b_integrity`) are automatically skipped in CI runners and executed during full local verification.
 
 #### 5. Launch Application
 ```bash
@@ -307,6 +308,7 @@ cd Rust-Python-Vector-Engine
 PYTHONPATH=. ../.venv/bin/python -m unittest discover tests -v
 cd ..
 ```
+> **CI ve Test Kapsamı Notu:** GitHub Actions CI iş akışı; süreç içi Rust vektör veri tabanını (PyO3 HNSW), etik güvenlik duvarlarını, HITL onay mekanizmasını ve bellek koruma modüllerini otomatik doğrular. 2–4GB yerel GGUF model ağırlıkları gerektiren testler (`test_production_engine`, `test_model_3b_integrity`) CI sunucularında disk/ağ maliyeti sebebiyle otomatik atlanır ve tam yerel ortamda doğrulanır.
 
 #### 5. Uygulamayı Başlatın
 ```bash
