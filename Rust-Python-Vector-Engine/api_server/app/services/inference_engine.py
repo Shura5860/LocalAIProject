@@ -1,7 +1,11 @@
 import os
 import logging
 from typing import Optional, Generator
-from llama_cpp import Llama
+try:
+    from llama_cpp import Llama
+except ImportError:
+    Llama = None
+
 from api_server.app.services.model_service import model_service
 
 logger = logging.getLogger(__name__)
@@ -37,6 +41,8 @@ class ProductionInferenceEngine:
         return self._llm
 
     def is_available(self) -> bool:
+        if Llama is None:
+            return False
         current_path = model_service.get_active_model_path()
         return os.path.exists(current_path)
 
