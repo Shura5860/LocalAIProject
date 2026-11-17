@@ -1,7 +1,7 @@
 [package]
-name = "desktop_app"
-version = "0.1.0"
-description = "OLED Dark Glassmorphism Personal AI Desktop Assistant"
+name = "aura_studio"
+version = "2.4.0"
+description = "AURA Studio: Real-time Agentic Desktop Environment"
 authors = ["shura"]
 license = ""
 repository = ""

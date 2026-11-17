@@ -31,8 +31,10 @@ models/
 my_vector_db.bin
 vector_db.wal
 db_dump.bin
+bm25_sparse_index.json
 *.sqlite3
 *.db
+.aura/traces/
 
 # ==============================================================================
 # 🐍 PYTHON DERLEME & SANAL ORTAMLAR
