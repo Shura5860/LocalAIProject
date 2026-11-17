@@ -12,10 +12,16 @@ from api_server.app.services.model_service import model_service
 
 class TestModelDownloader(unittest.TestCase):
     def setUp(self):
+        self._old_testing = os.environ.get("TESTING")
+        os.environ["TESTING"] = "1"
         self.client = TestClient(app)
         self.original_catalog = dict(model_service.catalog)
 
     def tearDown(self):
+        if self._old_testing is not None:
+            os.environ["TESTING"] = self._old_testing
+        else:
+            os.environ.pop("TESTING", None)
         model_service.catalog = dict(self.original_catalog)
 
     def test_search_hub_direct(self):

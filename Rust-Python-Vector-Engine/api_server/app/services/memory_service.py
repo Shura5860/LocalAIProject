@@ -86,11 +86,11 @@ class MemoryService:
         embeddings = self.embedder.encode([fact], convert_to_numpy=True).astype(np.float32)
         doc_id = allocate_doc_ids(1)[0]
         meta = {
-            "text": fact,
+            "text": str(fact),
             "category": "user_memory",
-            "topic": topic,
-            "importance": float(importance),
-            "created_at": float(time.time())
+            "topic": str(topic),
+            "importance": str(float(importance)),
+            "created_at": str(float(time.time()))
         }
 
         db.add_batch_with_metadata([doc_id], embeddings, [meta])

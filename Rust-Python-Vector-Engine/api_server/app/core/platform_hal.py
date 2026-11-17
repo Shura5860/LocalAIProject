@@ -183,8 +183,11 @@ class PlatformHAL:
                     "bash", "-c", command
                 ]
                 res = subprocess.run(bwrap_cmd, capture_output=True, text=True, timeout=timeout)
-                # Eğer container içinde veya iç içe sandbox kısıtlıysa subshell'e geri çekil
-                if res.returncode != 0 and any(err in res.stderr.lower() for err in ["namespace", "not permitted", "not implemented"]):
+                # Eğer bwrap container içinde, CI runner'da veya kısıtlı yetkilerde başarısız olduysa subshell'e geri çekil
+                if res.returncode != 0 and (
+                    "bwrap" in res.stderr.lower()
+                    or any(err in res.stderr.lower() for err in ["namespace", "not permitted", "not implemented", "permission", "cannot", "failed", "denied"])
+                ):
                     return subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
                 return res
 

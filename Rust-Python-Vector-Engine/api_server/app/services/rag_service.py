@@ -134,8 +134,9 @@ class RagService:
 
         prepared_metas = []
         for i, text in enumerate(documents):
-            meta = metadatas[i].copy() if (metadatas and i < len(metadatas)) else {}
-            meta["text"] = text
+            raw_meta = metadatas[i].copy() if (metadatas and i < len(metadatas)) else {}
+            raw_meta["text"] = text
+            meta = {str(k): str(v) for k, v in raw_meta.items()}
             prepared_metas.append(meta)
 
             # Sparse Index Güncellemesi (BM25 / Keyword)
