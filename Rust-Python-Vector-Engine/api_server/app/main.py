@@ -9,21 +9,32 @@ from api_server.app.api.v1.memory import router as memory_router
 from api_server.app.api.v1.workspace import router as workspace_router
 from api_server.app.api.v1.models import router as models_router
 from api_server.app.api.v1.license import router as license_router
-from api_server.app.core.config import init_database, db, DB_FILE
+from api_server.app.api.v1.openai_compat import router as openai_compat_router
+from api_server.app.core.config import init_database, save_database_and_checkpoint, db, DB_FILE
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("🚀 [1/2] Veritabanı başlatılıyor...")
     init_database()
     yield
-    print("🛑 [2/2] Sunucu kapatılıyor, veritabanı diske kaydediliyor...")
-    db.save_to_disk(DB_FILE)
+    print("🛑 [2/2] Sunucu kapatılıyor, veritabanı ve BM25 indeksi diske kaydediliyor...")
+    save_database_and_checkpoint()
 
 app = FastAPI(
     title="Unified Rust-AI Engine (Vector DB, LLM RAG, Autonomous Agent & Memory API)",
     description="Rust (PyO3 + HNSW + WAL) Vektör Veritabanı, Rust-LLM-Engine (SIMD Inference), ReAct Ajan ve Kişiselleştirilmiş Hafıza Platformu",
     version="1.0.0",
     lifespan=lifespan
+)
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 import os
@@ -52,15 +63,27 @@ app.include_router(memory_router)
 app.include_router(workspace_router)
 app.include_router(models_router)
 app.include_router(license_router)
+app.include_router(openai_compat_router)
 
 @app.get("/")
 def read_root():
+    desktop_index = os.path.join(DESKTOP_DIR, "index.html")
+    if os.path.exists(desktop_index):
+        return FileResponse(desktop_index)
     index_file = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {
         "status": "online",
         "engine": "VectorIndex Rust HNSW Modular Engine",
+        "total_documents": db.len()
+    }
+
+@app.get("/health")
+def health_check():
+    return {
+        "status": "online",
+        "engine": "AURA-CORE",
         "total_documents": db.len()
     }
 

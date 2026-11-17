@@ -1,46 +1,44 @@
+import os
 import sys
+import unittest
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from vector_engine import VectorIndex
 
-sys.stdout.reconfigure(encoding='utf-8')
 
+class TestVectorRangeFilter(unittest.TestCase):
+    def test_numeric_range_filtering(self):
+        dim = 384
+        np.random.seed(88)
+        vecs = np.random.randn(4, dim).astype(np.float32)
+        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
 
-def main():
-    print("--- 🔢 Sayısal Aralık (Range) Filtreleme Testi ---")
-    
-    model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        metas = [
+            {"year": "2024", "score": "8.2"},
+            {"year": "2026", "score": "9.5"},
+            {"year": "2026", "score": "9.8"},
+            {"year": "2020", "score": "6.0"}
+        ]
+        ids = [0, 1, 2, 3]
 
-    documents = [
-        {"id": 0, "text": "Python 3.13 performans iyileştirmeleri içerir.", "meta": {"year": "2024", "score": "8.2"}},
-        {"id": 1, "text": "Rust 2026 modern sistem programlama standartları.", "meta": {"year": "2026", "score": "9.5"}},
-        {"id": 2, "text": "Geleceğin yapay zeka mimarileri ve vektör motorları.", "meta": {"year": "2026", "score": "9.8"}},
-        {"id": 3, "text": "Eski yazılım mimarileri ve teknik borç yönetimi.", "meta": {"year": "2020", "score": "6.0"}}
-    ]
+        index = VectorIndex()
+        index.add_batch_with_metadata(ids, vecs, metas)
+        index.build_hnsw_index()
 
-    texts = [d["text"] for d in documents]
-    metas = [d["meta"] for d in documents]
-    ids = [d["id"] for d in documents]
-    embeddings = model.encode(texts, convert_to_numpy=True).astype(np.float32)
+        # 1. Yıl Filtresi (year >= 2026) -> IDs 1 ve 2
+        results_year = index.search_filtered(vecs[1], top_k=5, filter_key="year", filter_value="2026", operator=">=")
+        found_year_ids = {r[0] for r in results_year}
+        self.assertTrue(found_year_ids.issubset({1, 2}))
+        self.assertNotIn(0, found_year_ids)
+        self.assertNotIn(3, found_year_ids)
 
-    index = VectorIndex()
-    index.add_batch_with_metadata(ids, embeddings, metas)
-    index.build_hnsw_index()
+        # 2. Skor Filtresi (score > 9.0) -> IDs 1 ve 2
+        results_score = index.search_filtered(vecs[1], top_k=5, filter_key="score", filter_value="9.0", operator=">")
+        found_score_ids = {r[0] for r in results_score}
+        self.assertTrue(found_score_ids.issubset({1, 2}))
 
-    query = "Programlama ve yazılım mimarisi"
-    q_vec = model.encode(query, convert_to_numpy=True).astype(np.float32)
-
-    # 1. TEST: Yıl Filtresi (year >= 2026)
-    print(f"\n❓ Sorgu: '{query}' -> 🎯 FİLTRE: year >= 2026")
-    results_year = index.search_filtered(q_vec, top_k=5, filter_key="year", filter_value="2026", operator=">=")
-    for doc_id, dist, meta in results_year:
-        print(f"   • [{documents[doc_id]['text']}] | Metadata: {meta}")
-
-    # 2. TEST: Kalite Puanı Filtresi (score > 9.0)
-    print(f"\n❓ Sorgu: '{query}' -> 🎯 FİLTRE: score > 9.0")
-    results_score = index.search_filtered(q_vec, top_k=5, filter_key="score", filter_value="9.0", operator=">")
-    for doc_id, dist, meta in results_score:
-        print(f"   • [{documents[doc_id]['text']}] | Metadata: {meta}")
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

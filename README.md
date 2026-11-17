@@ -1,159 +1,157 @@
 <div align="center">
 
-# AURA-CORE: Local Agentic AI & Native Vector Engine
+# AURA-CORE & AURA Studio
 
-**A privacy-preserving, on-premise AI assistant combining an in-process Rust vector index, local GGUF inference, tool-augmented ReAct execution, and dual-licensing (AGPLv3 / Commercial).**
+**Yerel Otonom Ajan Mimarisi, Süreç İçi Rust Vektör Motoru ve Masaüstü Geliştirme Ortamı**  
+*Privacy-Preserving Local Agentic AI Engine, In-Process Rust Vector Database & Desktop Studio*
 
 [![Rust](https://img.shields.io/badge/Rust-1.80%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Framework-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8D8?logo=tauri&logoColor=white)](https://tauri.app/)
 [![License: AGPL v3 / Commercial](https://img.shields.io/badge/License-AGPL%20v3%20%2F%20Commercial-blue.svg)](./LICENSE)
-[![CI Test Suite](https://github.com/Shura5860/LocalAIProject/actions/workflows/ci.yml/badge.svg)](https://github.com/Shura5860/LocalAIProject/actions/workflows/ci.yml)
 
-[English](#english-documentation) • [Türkçe Dokümantasyon](#türkçe-dokümantasyon)
+[Türkçe Dokümantasyon](#türkçe-dokümantasyon) • [English Documentation](#english-documentation)
 
 <br/>
 
-![AURA-CORE Desktop Interface](docs/assets/aura_desktop_ui.png)
-*AURA-CORE OLED Desktop Interface: Real-time ReAct trace reasoning, token streaming, and embedded Rust vector synchronization.*
+![AURA Studio Desktop Preview](docs/assets/aura_studio_preview.png)
+*AURA Studio: Gerçek zamanlı düşünce süreci takibi, otonom ReAct ve Swarm modları, süreç içi Rust vektör motoru.*
 
 </div>
 
 ---
 
-<a name="english-documentation"></a>
-## English Documentation
+<a name="türkçe-dokümantasyon"></a>
+## 🇹🇷 Türkçe Dokümantasyon
 
-### 1. Overview & Problem Statement
+### 1. Genel Bakış ve Temel Yaklaşım
 
-Modern enterprise workflows frequently require LLM reasoning and semantic search over sensitive data (e.g. proprietary codebases, internal documentation, legal contracts). Offloading this workload to external cloud APIs introduces data residency, compliance (GDPR/KVKK), and vendor lock-in concerns.
+**AURA**, hassas kaynak kodları, teknik dokümantasyonlar ve yerel çalışma alanları üzerinde tam veri egemenliğiyle çalışmak üzere tasarlanmış yerel bir yapay zeka ve otonom ajan ekosistemidir.
 
-**AURA-CORE** is designed to address this by running entirely on local consumer- or workstation-grade hardware:
-- An **in-process Rust vector engine** utilizing Hierarchical Navigable Small World (HNSW) graphs and Write-Ahead Logging (WAL).
-- Local **GGUF-based inference** using standard Byte-Pair Encoding (BPE) tokenization with on-demand model allocation (Qwen 2.5 Coder 3B & 7B).
-- An autonomous **ReAct agent loop** equipped with deterministic guardrails and sandboxed tools (file I/O, terminal execution, direct local document fetching).
-- A lightweight **Tauri desktop shell** with dual-licensing options: completely free for open-source under AGPLv3 (no license key needed), or commercial EULA for proprietary redistribution.
+Harici bulut API'lerine bağımlılığı ve veri sızıntısı risklerini ortadan kaldırmak amacıyla, çıkarım (inference), anlamsal indeksleme (semantic indexing) ve kod düzenleme döngülerinin tamamı kullanıcının kendi donanımı üzerinde yürütülür.
+
+Sistem iki ana bileşenden meydana gelir:
+1. **AURA-CORE:** FastAPI, PyO3 tabanlı süreç içi Rust vektör motoru (`vector_engine`), otonom ReAct ajan döngüsü ve Swarm mimarisinden oluşan modüler arka uç.
+2. **AURA Studio:** Tauri 2.0 tabanlı, modern arayüz standartlarına sahip, gerçek zamanlı token ve düşünce akışını gösteren masaüstü kullanıcı arayüzü.
 
 ---
 
-### 2. Architecture & Request Lifecycle
+### 2. Mimari ve Bileşenler
 
 ```
-[User Request]
-       │
-       ▼
-┌─────────────────────────────────────────────────────────┐
-│ Tauri Desktop Application (WebKit / Web View)           │
-│  - SSE streaming client with real-time token rendering  │
-│  - Workspace binding & audit inspection                 │
-└──────────────────────────┬──────────────────────────────┘
-                           │ Loopback HTTP/2 + SSE (Port 8000)
-┌──────────────────────────▼──────────────────────────────┐
-│ FastAPI Application Core (Bound to 127.0.0.1)           │
-│  - Node-Locked License Guard (for Commercial builds)    │
-│  - Ethics & Command Guardrails (pre-execution regex)    │
-│  - Human-In-The-Loop (HITL) approval gateway            │
-└──────────────┬──────────────────────────┬───────────────┘
-               │                          │
-┌──────────────▼────────────┐  ┌──────────▼───────────────┐
-│ Rust Vector Database      │  │ Local Inference Runtime  │
-│  - PyO3 C-FFI bindings    │  │  - llama.cpp AVX2 engine │
-│  - In-memory HNSW index   │  │  - Lazy loading (0 MB    │
-│  - WAL append-only log    │  │    idle memory footprint)│
-│  - Cosine distance SIMD   │  │  - SSE token generator   │
-└───────────────────────────┘  └──────────────────────────┘
-```
-
----
-
-### 3. Engineering Decisions & Technical Trade-offs
-
-#### A. Vector Storage: Custom Rust Core vs External Vector Databases
-* **Decision:** Implement vector indexing in Rust with PyO3 bindings directly in-process.
-* **Rationale:** External vector databases (Pinecone, Qdrant, Milvus) introduce network hops, container management overhead, and complex lifecycle management for a desktop tool. Embedding the HNSW graph directly in-process eliminates network latency and IPC serialization overhead.
-* **Trade-off:** Building custom persistence requires implementing our own Write-Ahead Logging (WAL) and compaction/vacuuming mechanisms, increasing internal codebase complexity compared to managed solutions.
-
-#### B. Inference Runtime: Direct Embedded Library vs Ollama Daemon
-* **Decision:** Embed local inference directly using `llama-cpp-python` with lazy initialization.
-* **Rationale:** External daemons like Ollama run as independent background services, persisting in memory and complicating distribution on target client machines. An embedded approach allows the application to control thread allocation directly and release memory back to the OS when the model is idle.
-* **Hardware Reality:** Metrics reported below reflect deterministic **CPU AVX2 SIMD execution** (6 threads). The open-source repository defaults to portable CPU inference to run out-of-the-box on standard workstations without requiring complex CUDA toolkit installations.
-
-#### C. IP Protection: Proprietary Binary Packaging vs Open Source
-* **Context:** AURA-CORE is open source under GNU AGPLv3. For users compiling from source or distributing open-source derivatives, **no license key or obfuscation is required**.
-* **Decision:** Nuitka compilation and node-locked HMAC licensing utilities in `scripts/` exist exclusively as an optional packaging pipeline for **commercial enterprise vendors** who purchase a proprietary EULA waiver to distribute standalone, closed-source desktop binaries without disclosing customer modifications.
-
----
-
-### 4. Empirical Performance & Methodology
-
-All metrics were gathered on:
-- **CPU:** Intel Core i7 (6 physical threads allocated, AVX2 enabled)
-- **Host GPU:** NVIDIA GeForce RTX 3060 Ti (8GB VRAM)
-- **Active Compilation:** CPU-native AVX2 SIMD (`llama-cpp-python` CPU engine)
-- **OS:** Linux x86_64 (Kernel 6.x)
-- **Model:** Qwen 2.5 Coder Instruct (4-bit quantization, `Q4_K_M`)
-
-| Subsystem | Metric | Measured Value | Methodology and Exact Details |
-| :--- | :--- | :--- | :--- |
-| **Inference (3B)** | Generation Throughput | **~14.2 tokens/sec** | Measured across 128-token generation, AVX2 CPU SIMD (6 threads, `temp=0.2`). |
-| **Inference (7B)** | Generation Throughput | **~5.88 tokens/sec** | Measured across 128-token generation, AVX2 CPU SIMD (6 threads). |
-| **Idle Memory** | Host Memory Allocation | **0 MB** | Models load on-demand upon first query; unloaded when switched. |
-| **Active Memory (3B)** | System RAM Residency | **~1.96 GB RAM** | 4096 context window, zero idle overhead. |
-| **Active Memory (7B)** | System RAM Residency | **~4.36 GB RAM** | 4096 context window. |
-| **Vector Search (HNSW)** | Graph Traversal (Top-10) | **< 0.1 ms / query** | In-process HNSW graph query (`instant-distance 0.6`, M=16, ef_construction=200, ef_search=64, 10k synthetic 384-d normalized float32 vectors, >0.98 Top-10 Recall). |
-| **Vector Scan (Brute-Force)** | Exact Cosine Matrix Scan | **~19.2 ms** (100k vectors) | Exhaustive linear baseline across 100,000 synthetic vectors (384-d, float32) for Top-10. |
-
----
-
-### 5. Security Architecture, Threat Model & Privacy Guarantees
-
-#### Privacy Promise & External Network Policy
-- **Core Engine is 100% On-Premise:** LLM inference, embedding generation, RAG document indexing, and conversation state never leave the host system.
-- **External Web Search (`duckduckgo_search`):** If the user explicitly asks the agent to perform a live internet search (`web_search`), sanitized queries are sent directly to the DuckDuckGo API. **Air-Gapped Mode:** Setting `ENABLE_WEB_SEARCH=false` completely deactivates external search capabilities, ensuring zero outbound search packets.
-- **Direct Web Retrieval (`read_web_page`):** Fetches publicly accessible technical documentation directly from the target server using standard HTTP headers (`AURA-CORE-DocumentFetcher/1.0`). No third-party reader gateways (e.g. Jina) or cloud proxies are utilized.
-
-#### Threat Model & Security Boundaries
-1. **Localhost API Binding & CORS:** The backend API binds strictly to loopback (`127.0.0.1:8000`). It rejects wildcard Cross-Origin requests to mitigate browser-based DNS rebinding / CSRF attacks.
-2. **Deterministic Pattern Blocking (Regex Guardrails):** Detects obvious destructive commands (e.g., `rm -rf /`, `:(){ :|:& };:`, raw curl-pipe-to-shell, and base64 encoded payloads).
-3. **Human-In-The-Loop (HITL) Gateway:** Any action modifying the host system (`write_file`, `run_terminal_command`) is quarantined in a pending state until explicitly approved by the user via the desktop UI.
-4. **Known Limitations & Threat Vectors:**
-   - **Regex is not an OS sandbox:** Malicious prompt injection or clever shell invocations can theoretically bypass pattern filters.
-   - **Outbound Data Exfiltration via URL Query Parameters:** In untrusted code environments, prompt injection attacks could attempt to append sensitive tokens to external URLs passed to `read_web_page`. In enterprise security deployments, outbound requests should be restricted to a corporate domain allowlist or placed under HITL confirmation.
-
----
-
-### 6. Repository Structure
-
-```
-├── desktop_app/               # Tauri 2.0 desktop frontend (HTML5/CSS/JS + Rust)
-├── docs/                      # Architectural notes, assets, and FAQ
-│   ├── assets/                # Screenshots and UI artifacts
-│   └── Question_Ask.md        # Deep-dive design Q&A
-├── Rust-LLM-Engine/           # Native Rust LLM CLI & models directory
-├── Rust-Python-Vector-Engine/ # In-process Rust vector engine & FastAPI server
-│   ├── api_server/            # REST API, ReAct agent loop, tool registry
-│   └── tests/                 # Comprehensive test suites (24 test files)
-├── scripts/                   # Optional packaging and commercial licensing utilities
-│   ├── build_commercial_binary.sh
-│   ├── generate_license.py
-│   ├── package_distribution.sh
-│   └── license.json
-├── LICENSE                    # Dual License (GNU AGPLv3 + Commercial EULA)
-├── start_assistant.sh         # One-click launch script
-└── .github/workflows/ci.yml   # Continuous Integration test pipeline
+┌────────────────────────────────────────────────────────────────────────┐
+│                        AURA Studio (Tauri 2.0)                         │
+│  - Gerçek Zamanlı SSE Token Akışı & Düşünce Süreci (Stopwatch)         │
+│  - Çalışma Alanı Bağlama, Model Seçimi & HITL Onay Arayüzü            │
+│  - Spotlight Hızlı İstek Penceresi (Alt + Space)                      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Loopback HTTP/2 & SSE (127.0.0.1:8000)
+┌───────────────────────────────────▼────────────────────────────────────┐
+│                       AURA-CORE (FastAPI Motoru)                       │
+│  ┌───────────────────────┐ ┌───────────────────┐ ┌──────────────────┐ │
+│  │ Intent / Fast Router  │ │ ReAct Ajan Döngüsü│ │ Swarm Orkestrasyon│ │
+│  └───────────┬───────────┘ └─────────┬─────────┘ └────────┬─────────┘ │
+│              │                       │                    │           │
+│  ┌───────────▼───────────────────────▼────────────────────▼─────────┐ │
+│  │ Otonomi & Kod Güvenliği Katmanı                                    │ │
+│  │ - Semantik Araç Budama (Cosine Vector Pruning)                     │ │
+│  │ - Halüsinasyon ve Dosya Varlık Kalkanı (Disk Guard)                │ │
+│  │ - Toleranslı Kod Yamalama (Fuzzy Diff Matching - Levenshtein)      │ │
+│  │ - Uçuş Kayıtçısı (Flight Recorder - .auratrace.json)               │ │
+│  └───────────────────────────────────┬───────────────────────────────┘ │
+│                                      │                                 │
+│  ┌───────────────────────────────────▼───────────────────────────────┐ │
+│  │ Hibrit Bellek ve Veri Katmanı (RAG 2.0)                           │ │
+│  │ - Süreç İçi Rust HNSW Yoğun İndeks (PyO3 C-FFI)                   │ │
+│  │ - Okapi BM25 Seyrek İndeks & Reciprocal Rank Fusion (RRF)         │ │
+│  │ - AST Çağrı Grafı (Call-Graph) & Proje Kuralları (.cursorrules)   │ │
+│  │ - Zamansal Bellek Sönümlemesi (Temporal Decay)                    │ │
+│  └───────────────────────────────────┬───────────────────────────────┘ │
+│                                      │                                 │
+│  ┌───────────────────────────────────▼───────────────────────────────┐ │
+│  │ Donanım, Çıkarım ve Entegrasyon                                   │ │
+│  │ - GGUF Motoru (llama-cpp-python) & KV Prefix Cache (LlamaRAMCache) │ │
+│  │ - Bağlam Sıkıştırıcı (Context Compactor)                          │ │
+│  │ - Donanım Soyutlama (HAL - CPU Thread Affinity Bağlama)           │ │
+│  │ - Model Context Protocol (MCP) & OpenAI Uyumlu Uç Noktalar        │ │
+│  └───────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 7. Step-by-Step Installation & Quickstart
+### 3. Çekirdek Yetenekler
 
-> **Platform Support Note:** Tested on **Linux only** (Arch Linux, Ubuntu 22.04/24.04, Fedora 39/40).
+#### Otonom Ajan Mimarisi & Kod Zekası
+- **Semantik Araç Budama (Semantic Tool Pruning):** İstek bağlamına göre tüm araç tanımlarını isteme (prompt) yığmak yerine, vektör benzerliğiyle en alakalı araçları dinamik olarak seçer ve bağlam israfını önler.
+- **Halüsinasyon ve Varlık Doğrulama (Disk Guard):** Ajanın dosya okuma veya düzenleme eylemlerinden önce hedef dosyaların çalışma alanında fiilen var olup olmadığını denetler, hayali yol üretimlerini engeller.
+- **Toleranslı Kod Yamalama (Fuzzy Diff Matching):** `apply_diff` aracı, girintileme, satır sonu veya boşluk farklılıklarında Levenshtein tabanlı kayan pencere algoritmasıyla eşleşme sağlayarak yamaların bozulmadan uygulanmasını hedefler.
+- **Düşünce Adayı Değerlendirme (Tree-of-Thoughts Yaklaşımı):** Kritik işlemlerde alternatif yürütme adımlarını değerlendirerek en tutarlı aksiyonu seçer.
+- **Uçuş Kayıtçısı (Flight Recorder):** Ajanın gerçekleştirdiği düşünce, eylem ve gözlem adımlarını `.aura/traces/` altına `.auratrace.json` formatında kaydederek geriye dönük hata analizi imkanı sunar.
 
-#### Prerequisites
-- **Python:** 3.11 or higher
-- **Rust & Cargo:** 1.80 or higher (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- **System Libraries (Linux Desktop & Build):**
+#### Çoklu-Ajan Sürüsü (Swarm) & Derleyici Koruması
+- **Rol Odaklı İş Bölümü:** Mimar (iş kırılımı), Kodlayıcı (cerrahi diff üretimi) ve Denetçi (derleme ve test kontrolü) rollerinden oluşan iş akışı.
+- **Derleyici Destekli Onarım:** Yapılan kod değişiklikleri sonrasında derleyici veya sözdizim denetimi çalıştırılır; hata durumunda otomatik geri alma ve düzeltme döngüsü işletilir.
+
+#### RAG 2.0: Hibrit Arama & Proje Hafızası
+- **Süreç İçi Rust HNSW:** PyO3 bağlarıyla doğrudan Python bellek alanında çalışan, harici ağ gecikmesi veya IPC yükü oluşturmayan yoğun vektör grafı.
+- **Reciprocal Rank Fusion (RRF):** Anlamsal benzerlik (vektör) ile kesin anahtar kelime eşleşmesini (Okapi BM25) matematiksel sıralama füzyonuyla birleştirir.
+- **AST Tabanlı Çağrı Grafı:** Kaynak kodlardaki fonksiyon çağrı ilişkilerini (Caller -> Callee) çıkararak arama sonuçlarına yapısal bağlam katar.
+- **Proje Kuralları Entegrasyonu:** Çalışma alanındaki `.cursorrules`, `.aura/rules` veya `.aura/rules.md` dosyalarını otomatik tarayarak ajan kararlarına dahil eder.
+- **Zamansal Bellek Sönümlemesi:** Konuşma geçmişindeki eski bağlamları zaman ekseninde kademeli olarak sönümler; pekiştirilen bilgileri öne çıkarır.
+
+#### Çıkarım Optimizasyonu ve Donanım Güvenliği
+- **KV Prefix Önbellekleme (`LlamaRAMCache`):** Değişmeyen sistem yönlendirmeleri ve proje kurallarını bellekte önbelleğe alarak tekrar hesaplama maliyetini düşürür.
+- **Dinamik Bağlam Sıkıştırıcı:** Modelin bağlam penceresi sınırına yaklaşıldığında eski araç çıktılarını ve ara konuşmaları özetleyerek bağlam taşmasını önler.
+- **Donanım Soyutlama Katmanı (HAL):** Linux ortamında `sched_setaffinity` ile işlemci çekirdeklerini düzenleyerek masaüstü arayüzünün takılmasını önler.
+
+#### Entegrasyon ve Standartlar
+- **Model Context Protocol (MCP) İstemcisi:** Harici MCP sunucularıyla standart stdio JSON-RPC protokolü üzerinden konuşarak üçüncü taraf araçları entegre eder.
+- **OpenAI Uyumlu REST API:** `/v1/chat/completions`, `/v1/models` ve `/v1/embeddings` uç noktaları sayesinde Cursor, Continue, Open-WebUI ve Aider gibi araçlarla doğrudan çalışabilir.
+- **Modüler Corten Desktop Profili:** `AURA_TOOL_PROFILE=corten` ortam değişkeniyle Wayland / Corten pencere yöneticisi entegrasyonu sağlar.
+
+---
+
+### 4. Güvenlik ve Tehdit Modeli
+
+1. **İnsan Onayı Mekanizması (HITL Gateway):** Dosya yazma (`write_file`, `apply_diff`) ve terminal komutu çalıştırma (`run_terminal_command`) gibi sistemi etkileyebilecek eylemler, kullanıcı arayüz üzerinden onay verene kadar bekletilir.
+2. **Çalışma Alanı Sınırı (Path Validation):** Tüm dosya işlemleri, belirlenen çalışma alanı kök dizini içinde sınırlandırılır; dizin dışına çıkma girişimleri engellenir.
+3. **Kural Tabanlı Güvenlik Duvarı:** Zararlı olabilecek açık kabuk komutları (`rm -rf /`, tehlikeli fork-bomb kalıpları, ham curl-pipe zincirleri) önceden filtrelenir.
+4. **Yerel Ağ Bağlantısı:** API varsayılan olarak yalnızca yerel döngü adresine (`127.0.0.1:8000`) bağlanır; harici ağ erişimi kullanıcı iznine bağlıdır.
+
+---
+
+### 5. Dizin Yapısı
+
+```
+├── desktop_app/               # Tauri 2.0 masaüstü arayüzü (HTML5/CSS/JS + Rust)
+├── docs/                      # Mimari dokümanlar, şemalar ve rehberler
+│   ├── assets/                # Arayüz ekran görüntüleri ve görseller
+│   └── CORTEN_INTEGRATION.md  # Wayland / Corten entegrasyon kılavuzu
+├── Rust-LLM-Engine/           # Yerel model çalıştırma dizini ve CLI
+├── Rust-Python-Vector-Engine/ # Çekirdek arka uç ve vektör motoru
+│   ├── api_server/            # FastAPI, ReAct/Swarm servisleri, MCP köprüsü
+│   │   ├── app/core/          # Yapılandırma, güvenlik ve HAL modülleri
+│   │   ├── app/services/      # RAG, çıkarım, bellek ve ajan servisleri
+│   │   └── app/tools/         # Araç havuzu, fuzzy diff ve MCP entegrasyonu
+│   ├── vector_engine/         # Rust HNSW vektör motoru kaynak kodu
+│   └── tests/                 # Kapsamlı test paketleri
+├── scripts/                   # Kurulum ve isteğe bağlı paketleme betikleri
+├── LICENSE                    # AGPLv3 ve Ticari Lisans metni
+└── start_assistant.sh         # Başlatma betiği
+```
+
+---
+
+### 6. Kurulum ve Başlatma
+
+> **Platform Desteği:** Linux dağıtımları üzerinde geliştirilmiş ve doğrulanmıştır (Arch Linux, Ubuntu 22.04/24.04, Fedora).
+
+#### Gereksinimler
+- Python 3.11 veya üzeri
+- Rust & Cargo 1.80 veya üzeri (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- WebKit2GTK ve GTK3 sistem kütüphaneleri:
   ```bash
   # Debian / Ubuntu:
   sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
@@ -163,7 +161,7 @@ All metrics were gathered on:
   sudo pacman -S base-devel webkit2gtk-4.1 gtk3 libayatana-appindicator
   ```
 
-#### 1. Clone & Set Up Python Environment
+#### 1. Depoyu Klonlama ve Python Ortamı
 ```bash
 git clone https://github.com/Shura5860/LocalAIProject.git
 cd LocalAIProject
@@ -174,31 +172,21 @@ pip install --upgrade pip
 pip install maturin "httpx[http2]" duckduckgo_search sentence-transformers psutil fastapi uvicorn llama-cpp-python
 ```
 
-#### 2. Build the Native Rust Vector Engine
+#### 2. Rust Vektör Motorunu Derleme
 ```bash
 cd Rust-Python-Vector-Engine/vector_engine
 maturin develop --release
 cd ../..
 ```
 
-#### 3. Download Model Weights (Optional - Fallback simulation provided)
-Place any GGUF model (recommended: Qwen 2.5 Coder 3B or 7B Instruct) into `Rust-LLM-Engine/models/`:
-```bash
-mkdir -p Rust-LLM-Engine/models
-# Example using huggingface-cli:
-pip install huggingface_hub
-huggingface-cli download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF qwen2.5-coder-3b-instruct-q4_k_m.gguf --local-dir Rust-LLM-Engine/models
-```
-
-#### 4. Run Automated Tests
+#### 3. Testleri Çalıştırma
 ```bash
 cd Rust-Python-Vector-Engine
 PYTHONPATH=. ../.venv/bin/python -m unittest discover tests -v
 cd ..
 ```
-> **CI & Test Scope Note:** The GitHub Actions CI pipeline runs unit and integration tests for the in-process Rust vector database (PyO3 HNSW), ethics guardrails, HITL gateway, and memory protection. Tests requiring 2–4GB local GGUF weights (`test_production_engine`, `test_model_3b_integrity`) are automatically skipped in CI runners and executed during full local verification.
 
-#### 5. Launch Application
+#### 4. Uygulamayı Başlatma
 ```bash
 ./start_assistant.sh
 ```
@@ -206,117 +194,94 @@ cd ..
 ---
 ---
 
-<a name="türkçe-dokümantasyon"></a>
-## 🇹🇷 Türkçe Dokümantasyon
+<a name="english-documentation"></a>
+## 🇬🇧 English Documentation
 
-### 1. Genel Bakış ve Problem Tanımı
+### 1. Overview & Architectural Philosophy
 
-Kurumsal yapılarda ve teknik iş akışlarında, hassas veriler (kaynak kodlar, iç yazışmalar, hukuki sözleşmeler) üzerinde yapay zeka ve anlamsal arama çalıştırmak kritik bir ihtiyaçtır. Bu verileri harici bulut API'lerine (OpenAI, Anthropic) göndermek; KVKK/GDPR uyumluluğu, veri mahremiyeti ve ticari sırların korunması açısından riskler doğurur.
+**AURA** is an on-premise, privacy-preserving local AI assistant and autonomous agent framework engineered for secure software engineering, semantic codebase indexing, and multi-agent problem solving.
 
-**AURA-CORE**, tamamen kullanıcının kendi donanımı üzerinde, internet bağlantısına ihtiyaç duymadan (Air-Gapped) çalışacak şekilde tasarlanmış yerel bir yapay zeka asistanıdır:
-- **Rust ile geliştirilmiş süreç içi vektör veri tabanı:** HNSW graf indeksleme ve Write-Ahead Logging (WAL) veri güvenliği.
-- **Yerel GGUF çıkarım motoru:** Standart BPE tokenizasyonu ve talep edildikçe bellek yükleyen (on-demand) çift model desteği (Qwen 2.5 Coder 3B & 7B).
-- **Otonom ReAct ajan döngüsü:** Terminal komutları, dosya düzenleme ve yerel web içeriği okuma için insan onaylı (HITL) güvenlik duvarı.
-- **Tauri masaüstü arayüzü:** Düşük bellek tüketimli istemci; açık kaynak topluluğu için AGPLv3 (lisans anahtarı gerekmez), ticari dağıtım için EULA lisansı.
+By executing all inference passes, vector indexing, and code refactoring loops strictly on the local machine, AURA guarantees complete data sovereignty without routing confidential codebases through third-party cloud APIs.
 
----
-
-### 2. Güvenlik Mimarisi, Tehdit Modeli ve Gizlilik İlkeleri
-
-#### Kesin Gizlilik ve Harici Ağ Politikası
-- **Çekirdek Sistem %100 Yereldir:** LLM çıkarımı, embedding üretimi, RAG indeksleme ve konuşma geçmişi asla yerel cihazdan dışarı çıkmaz.
-- **Harici Web Araması (`duckduckgo_search`):** Kullanıcı ajandan açıkça internet araması talep ederse (`web_search`), arındırılmış sorgular DuckDuckGo API'sine iletilir. **Tam Air-Gapped Mod:** `ENABLE_WEB_SEARCH=false` ayarlandığında canlı web araması tamamen kapatılır ve dışarı sıfır arama paketi gider.
-- **Doğrudan Web İçeriği Alma (`read_web_page`):** Halka açık teknik dokümantasyonları doğrudan hedef sunucudan standart başlıklarla (`AURA-CORE-DocumentFetcher/1.0`) çeker; üçüncü taraf okuyucu gateway veya proxy servisleri (Jina vb.) kullanılmaz.
-
-#### Tehdit Modeli ve Güvenlik Sınırları
-1. **Localhost API İzolasyonu & CORS:** API sunucusu yalnızca yerel döngü adresine (`127.0.0.1:8000`) bağlanır. Tarayıcı kaynaklı DNS rebinding ve CSRF saldırılarına karşı CORS kısıtlaması devrededir.
-2. **Kural Tabanlı Filtreler (Regex):** Zararlı olabilecek açık kabuk kalıplarını (`rm -rf /`, `:(){ :|:& };:`, curl-pipe-bash, base64 payload'lar) engeller.
-3. **İnsan Onay Mekanizması (HITL Gateway):** Dosya yazma (`write_file`) veya terminal komutu (`run_terminal_command`) gibi sistemi değiştirebilecek kritik tüm eylemler, kullanıcı arayüzden açık onay verene kadar bekletilir.
-4. **Bilinen Kısıtlamalar ve Tehdit Vektörleri:**
-   - **Regex tek başına işletim sistemi sandbox'ı değildir:** Gelişmiş prompt injection teknikleri veya karmaşık kabuk zincirleri kural filtrelerini aşabilir.
-   - **URL Query Parametreleri Üzerinden Veri Sızdırma:** Güvenilmeyen kaynaklarda çalışırken prompt injection saldırıları hassas verileri URL parametresi olarak `read_web_page` aracına ekletmeye çalışabilir. Kurumsal ortamlarda giden isteklerin alan adı beyaz listesine (Allowlist) bağlanması veya HITL onayına tabi tutulması tavsiye edilir.
+The system is composed of two primary layers:
+1. **AURA-CORE:** High-performance backend combining FastAPI, an in-process Rust vector database (`vector_engine` via PyO3 C-FFI), an autonomous ReAct agent loop, and a coordinated multi-agent Swarm.
+2. **AURA Studio:** A Tauri 2.0 desktop application featuring real-time token streaming, live thought process tracking with a stopwatch indicator, and granular Human-In-The-Loop controls.
 
 ---
 
-### 3. Ölçüm Sonuçları ve Test Metodolojisi
+### 2. Architectural Highlights
 
-Aşağıdaki veriler belirtilen donanım üzerinde ölçülmüştür:
-- **İşlemci:** Intel Core i7 (6 fiziksel iş parçacığı, AVX2 aktif)
-- **Ekran Kartı:** NVIDIA GeForce RTX 3060 Ti (8GB VRAM)
-- **Çıkarım Çalışma Zamanı:** CPU-Native AVX2 SIMD (`llama-cpp-python` CPU derlemesi)
-- **İşletim Sistemi:** Linux x86_64
-- **Model:** Qwen 2.5 Coder Instruct (4-bit kuantizasyon, `Q4_K_M`)
+#### Autonomous Agent & Code Intelligence
+- **Semantic Tool Pruning:** Dynamically queries the tool registry using vector cosine similarity to supply only relevant tool definitions for the current turn, minimizing prompt token consumption.
+- **Disk Guard & Hallucination Prevention:** Inspects the physical workspace to verify file paths and targets exist before executing operations like `read_file` or `apply_diff`.
+- **Fuzzy Diff Matching:** Employs a sliding-window Levenshtein similarity algorithm in `apply_diff` to resolve whitespace, newline, and indentation variations without patch failure.
+- **Candidate Thought Evaluation (ToT):** Samples and ranks intermediate reasoning hypotheses before committing non-trivial code modifications.
+- **Flight Recorder:** Preserves complete step-by-step trajectories (thoughts, actions, tool outputs) into `.aura/traces/*.auratrace.json` for deterministic offline inspection.
 
-| Alt Sistem | Metrik | Ölçülen Değer | Metodoloji ve Detaylar |
-| :--- | :--- | :--- | :--- |
-| **Çıkarım (3B)** | Üretim Hızı | **~14.2 token/sn** | 128 tokenlik kod testi, AVX2 CPU SIMD (6 iş parçacığı, `temp=0.2`). |
-| **Çıkarım (7B)** | Üretim Hızı | **~5.88 token/sn** | 128 tokenlik kod testi, AVX2 CPU SIMD (6 iş parçacığı). |
-| **Boşta Bellek** | Bellek Ayırma | **0 MB** | Model yalnızca soru sorulduğunda yüklenir; boşta bellek tutulmaz. |
-| **Aktif Bellek (3B)** | Sistem RAM Ayak İzi | **~1.96 GB RAM** | 4096 token bağlam penceresi. |
-| **Aktif Bellek (7B)** | Sistem RAM Ayak İzi | **~4.36 GB RAM** | 4096 token bağlam penceresi. |
-| **Vektör Arama (HNSW)** | Graf Taraması (Top-10) | **< 0.1 ms / sorgu** | Süreç içi HNSW graf taraması (`instant-distance 0.6`, M=16, ef_construction=200, ef_search=64, 10k sentetik vektör, >0.98 Top-10 Doğruluk / Recall). |
-| **Vektör Arama (Brute-Force)**| Matris Benzerlik Taraması | **~19.2 ms** (100k vektör) | 100.000 adet 384-boyutlu sentetik float32 vektörde kesin Top-10 kaba kuvvet referansı. |
+#### Multi-Agent Swarm & Compiler-Directed Repair
+- **Role Specialization:** Orchestrates Architect (DAG task decomposition), Coder (diff generation), and Verifier (syntax and compiler checking) agents.
+- **Verification Loop:** Verifies modifications with AST parsers or compilers, executing automated rollbacks whenever syntax or execution integrity is violated.
+
+#### RAG 2.0: Hybrid Retrieval & Memory
+- **In-Process Rust HNSW:** PyO3-bound hierarchical navigable small-world index operating within the host process memory space, eliminating network overhead.
+- **Reciprocal Rank Fusion (RRF):** Fuses dense vector similarity with Okapi BM25 sparse lexical search for robust information retrieval across source code and natural language.
+- **AST Call-Graph Extraction:** Traces Caller -> Callee invocation relationships across code files to contextualize technical retrieval.
+- **Project Rule Discovery:** Automatically loads and injects guidelines from `.cursorrules`, `.aura/rules`, and `.aura/rules.md`.
+- **Temporal Memory Decay:** Models conversational memory with exponential decay factors over time, keeping active context relevant.
+
+#### Inference Optimizations & Resource Safety
+- **Stateful Prefix Caching (`LlamaRAMCache`):** Reuses precomputed KV-cache states for shared prompts and project rules to reduce evaluation cycles.
+- **Context Compactor:** Recursively compresses historical turns and tool payloads when conversation volume approaches context window thresholds.
+- **Hardware Abstraction Layer (HAL):** Regulates CPU affinity via `sched_setaffinity` on Linux systems to safeguard desktop compositor responsiveness.
+
+#### Standards & Ecosystem Interoperability
+- **Model Context Protocol (MCP):** Connects external tools and servers through standard stdio JSON-RPC channels.
+- **OpenAI-Compatible API:** Provides drop-in endpoints (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`) compatible with tools like Cursor, Continue, and Aider.
+- **Modular Corten Desktop Profile:** Adapts tool profiles dynamically (`AURA_TOOL_PROFILE=corten`) for native Wayland compositor integration.
 
 ---
 
-### 4. Kurulum ve Başlatma (Sıfırdan Adım Adım)
+### 3. Security & Safety Model
 
-> **Platform Notu:** Yalnızca **Linux üzerinde test edilmiştir** (Arch Linux, Ubuntu 22.04/24.04, Fedora 39/40).
+1. **Human-In-The-Loop (HITL) Gateway:** Critical operations (`write_file`, `apply_diff`, `run_terminal_command`) are placed in a quarantined pending state until explicitly approved by the user in AURA Studio.
+2. **Workspace Isolation:** File manipulation is constrained to the user-selected workspace directory, blocking path traversal attempts.
+3. **Command Guardrails:** Pattern filters intercept destructive shell commands before execution.
+4. **Localhost Binding:** API endpoints bind strictly to loopback (`127.0.0.1:8000`) with restricted Cross-Origin policies.
 
-#### Önkoşullar
-- **Python:** 3.11 veya üzeri
-- **Rust & Cargo:** 1.80 veya üzeri (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- **Sistem Kütüphaneleri (Masaüstü Arayüzü & Derleme):**
-  ```bash
-  # Debian / Ubuntu:
-  sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-  # Fedora:
-  sudo dnf install -y gcc gcc-c++ webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel
-  # Arch Linux:
-  sudo pacman -S base-devel webkit2gtk-4.1 gtk3 libayatana-appindicator
-  ```
+---
 
-#### 1. Depoyu Klonlayın ve Python Sanal Ortamını Kurun
+### 4. Installation & Quickstart
+
+#### Prerequisites
+- Python 3.11+
+- Rust & Cargo 1.80+
+- WebKit2GTK & GTK3 development headers for Linux desktop builds
+
+#### Build & Run
 ```bash
+# 1. Clone & prepare environment
 git clone https://github.com/Shura5860/LocalAIProject.git
 cd LocalAIProject
-
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
-pip install maturin "httpx[http2]" duckduckgo_search sentence-transformers psutil fastapi uvicorn llama-cpp-python
-```
+pip install -r requirements.txt  # or install core dependencies
 
-#### 2. Rust Vektör Motorunu Derleyin
-```bash
+# 2. Build in-process Rust vector engine
 cd Rust-Python-Vector-Engine/vector_engine
 maturin develop --release
 cd ../..
-```
 
-#### 3. Modeli İndirin (Opsiyonel)
-GGUF model dosyasını `Rust-LLM-Engine/models/` dizinine yerleştirin:
-```bash
-mkdir -p Rust-LLM-Engine/models
-pip install huggingface_hub
-huggingface-cli download Qwen/Qwen2.5-Coder-3B-Instruct-GGUF qwen2.5-coder-3b-instruct-q4_k_m.gguf --local-dir Rust-LLM-Engine/models
-```
-
-#### 4. Birim Testleri Çalıştırın (24 Test)
-```bash
+# 3. Execute test suite
 cd Rust-Python-Vector-Engine
 PYTHONPATH=. ../.venv/bin/python -m unittest discover tests -v
 cd ..
-```
-> **CI ve Test Kapsamı Notu:** GitHub Actions CI iş akışı; süreç içi Rust vektör veri tabanını (PyO3 HNSW), etik güvenlik duvarlarını, HITL onay mekanizmasını ve bellek koruma modüllerini otomatik doğrular. 2–4GB yerel GGUF model ağırlıkları gerektiren testler (`test_production_engine`, `test_model_3b_integrity`) CI sunucularında disk/ağ maliyeti sebebiyle otomatik atlanır ve tam yerel ortamda doğrulanır.
 
-#### 5. Uygulamayı Başlatın
-```bash
+# 4. Launch application
 ./start_assistant.sh
 ```
 
 ---
 
 <div align="center">
-<b>AURA-CORE: Engineered with rigorous architectural standards. Dual licensed under AGPLv3 and Commercial EULA.</b>
+<sub>AURA: Local Agentic AI & In-Process Vector Engine. Dual licensed under AGPLv3 and Commercial EULA.</sub>
 </div>

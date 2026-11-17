@@ -1,12 +1,14 @@
-/* Smart Code Block & KaTeX / Markdown Table Styling */
+/* ==============================================================================
+   AURA STUDIO — Code Block, Unified Diff & Markdown Tables
+   Style: Cursor & Zed Precision • JetBrains Mono • Zero Slop
+   ============================================================================== */
 
 .code-container {
-  margin: 12px 0;
-  background: #050508;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
+  margin: 14px 0;
+  background: #090a0d;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
   font-family: var(--font-code);
 }
 
@@ -14,11 +16,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: rgba(18, 18, 24, 0.85);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  padding: 6px 12px;
+  background: #111216;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.72rem;
+  color: var(--text-dim);
 }
 
 .code-lang {
@@ -26,44 +28,48 @@
   align-items: center;
   gap: 6px;
   text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--accent-cyan);
+  font-weight: 550;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.code-lang svg {
+  color: var(--text-dim);
 }
 
 .code-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .btn-code-action {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text-main);
-  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  padding: 3px 8px;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 0.70rem;
   font-family: var(--font-ui);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 4px;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 
 .btn-code-action:hover {
-  background: rgba(168, 85, 247, 0.2);
-  border-color: var(--border-neon-purple);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-subtle);
+  color: var(--text-main);
 }
 
 .code-content {
-  padding: 12px;
+  padding: 10px 12px;
   overflow-x: auto;
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: #e2e8f0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: #e4e4e7;
 }
 
 /* Line Numbers and Code Layout */
@@ -73,62 +79,83 @@
 }
 
 .code-line-num {
-  width: 40px;
+  width: 36px;
   user-select: none;
   text-align: right;
-  padding-right: 12px;
-  color: var(--text-dim);
-  font-size: 0.75rem;
+  padding-right: 14px;
+  color: #52525b;
+  font-size: 0.72rem;
+  font-family: var(--font-code);
 }
 
 .code-line-text {
   white-space: pre;
 }
 
-/* Syntax Highlighting Base */
-.token-keyword { color: #f43f5e; font-weight: 600; }
-.token-fn { color: #38bdf8; }
-.token-string { color: #a3e635; }
-.token-comment { color: #64748b; font-style: italic; }
-.token-number { color: #fbbf24; }
-.token-type { color: #c084fc; }
+/* Syntax Highlighting (Muted GitHub Dark / Zed Palette) */
+.token-keyword { color: #f472b6; font-weight: 500; }
+.token-fn      { color: #60a5fa; }
+.token-string  { color: #4ade80; }
+.token-comment { color: #71717a; font-style: italic; }
+.token-number  { color: #fbbf24; }
+.token-type    { color: #a78bfa; }
+
+/* Unified Diff Line Highlights */
+.diff-line-add {
+  background: rgba(52, 211, 153, 0.08);
+  color: #34d399;
+}
+.diff-line-del {
+  background: rgba(248, 113, 113, 0.08);
+  color: #f87171;
+}
 
 /* Markdown Table Styling */
 table.markdown-table {
   border-collapse: collapse;
   width: 100%;
-  margin: 12px 0;
-  font-size: 0.88rem;
-  border: 1px solid var(--border-subtle);
+  margin: 14px 0;
+  font-size: 0.84rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
   border-radius: 6px;
   overflow: hidden;
 }
 
 table.markdown-table th {
-  background: rgba(25, 25, 35, 0.7);
-  color: var(--accent-cyan);
+  background: #111216;
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid var(--border-subtle);
   font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 table.markdown-table td {
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-main);
+  line-height: 1.5;
 }
 
-table.markdown-table tr:hover {
+table.markdown-table tr:last-child td {
+  border-bottom: none;
+}
+
+table.markdown-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
 }
 
-/* KaTeX Math Formula Container */
+/* KaTeX Formula Display */
 .katex-display-wrapper {
-  margin: 10px 0;
+  margin: 12px 0;
   padding: 10px 14px;
-  background: rgba(168, 85, 247, 0.06);
-  border-left: 3px solid var(--accent-purple);
-  border-radius: 4px;
+  background: #090a0d;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
   overflow-x: auto;
+  text-align: center;
 }

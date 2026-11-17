@@ -1,59 +1,60 @@
 import sys
 import os
+import unittest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from api_server.app.tools.registry import tool_registry
 from api_server.app.services.agent_service import agent_service
 
-def test_tools():
-    print("=" * 70)
-    print("🛠️ FAZ 2 TESTİ: Tool Calling & Autonomous Agent Execution")
-    print("=" * 70)
 
-    # 1. Kayıtlı Araçların Doğrulanması
-    print("\n[1] Kayıtlı Araçların Şemaları:")
-    for t in tool_registry.get_all_tools():
-        schema = t.to_schema()
-        print(f"  • Araç: {schema['name']} -> {schema['description'][:60]}...")
+class TestTools(unittest.TestCase):
+    def test_registered_tools_schema(self):
+        tools = tool_registry.get_all_tools()
+        self.assertGreaterEqual(len(tools), 5)
+        for t in tools:
+            schema = t.to_schema()
+            self.assertIn("name", schema)
+            self.assertIn("description", schema)
+            self.assertIn("parameters", schema)
 
-    # 2. Doğrudan Araç Yürütme Testleri
-    print("\n[2] Doğrudan Araç Fonksiyonlarının Yürütülmesi:")
-    
-    calc_tool = tool_registry.get_tool("calculator")
-    calc_res = calc_tool.execute(expression="250 * 4 + 15")
-    print(f"  • Calculator ('250 * 4 + 15'): {calc_res}")
-    assert calc_res == "1015"
+    def test_calculator(self):
+        calc_tool = tool_registry.get_tool("calculator")
+        self.assertIsNotNone(calc_tool)
+        res = calc_tool.execute(expression="250 * 4 + 15")
+        self.assertEqual(res, "1015")
 
-    sys_tool = tool_registry.get_tool("system_info")
-    sys_res = sys_tool.execute(metric="cpu")
-    print(f"  • System Info ('cpu'): {sys_res}")
-    assert "cpu_percent" in sys_res
+    def test_system_info(self):
+        sys_tool = tool_registry.get_tool("system_info")
+        self.assertIsNotNone(sys_tool)
+        res = sys_tool.execute(metric="cpu")
+        self.assertIn("cpu_percent", res)
 
-    py_tool = tool_registry.get_tool("python_interpreter")
-    py_res = py_tool.execute(code="a = [x**2 for x in range(5)]; print('Kareler:', a)")
-    print(f"  • Python Interpreter: {py_res}")
-    assert "Kareler:" in py_res
+    def test_python_interpreter(self):
+        py_tool = tool_registry.get_tool("python_interpreter")
+        self.assertIsNotNone(py_tool)
+        res = py_tool.execute(code="a = [x**2 for x in range(5)]; print('Kareler:', a)")
+        self.assertIn("Kareler:", res)
 
-    # 3. Ajan Döngüsü Testleri (Agent Loop)
-    print("\n[3] Ajanın Soru Üzerinden İlgili Aracı Tetiklemesi:")
-    
-    agent_queries = [
-        "125 * 8 kaçtır hesaplar mısın?",
-        "Bilgisayarın RAM ve CPU sistem durumu nedir?",
-        "Kadıköy hava durumu nasıl arar mısın?"
-    ]
+    def test_corten_profile_modular_lifecycle(self):
+        # 1. Başlangıçta Corten araçları çekirdeğe zorunlu yüklenmemeli
+        initial_tools = {t.name for t in tool_registry.get_all_tools()}
+        
+        # 2. Corten profilini dinamik olarak yükle
+        loaded_count = tool_registry.load_corten_profile()
+        self.assertGreater(loaded_count, 0)
+        
+        corten_vol = tool_registry.get_tool("corten_set_volume")
+        self.assertIsNotNone(corten_vol)
+        
+        # 3. Güvenlik: corten_system_power onay gerektirmeli
+        from api_server.app.core.guardrails import is_approval_required
+        self.assertTrue(is_approval_required("corten_system_power"))
 
-    for q in agent_queries:
-        print(f"\n❓ Ajan Sorusu: \"{q}\"")
-        res = agent_service.run(user_query=q)
-        print(f"   🛠️ Tetiklenen Araç: {res['tool_used']}")
-        print(f"   📊 Araç Çıktısı: {res['tool_result']}")
-        print(f"   🤖 Nihai Yanıt:\n   {res['answer']}")
+        # 4. Profili güvenle kaldır
+        tool_registry.unload_corten_profile()
+        self.assertIsNone(tool_registry.get_tool("corten_set_volume"))
 
-    print("\n" + "=" * 70)
-    print("✅ FAZ 2 TOOL CALLING ENTEGRASYON TESTİ BAŞARIYLA GEÇTİ!")
-    print("=" * 70)
 
 if __name__ == "__main__":
-    test_tools()
+    unittest.main()

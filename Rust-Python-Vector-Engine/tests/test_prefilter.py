@@ -1,46 +1,42 @@
+import os
 import sys
+import unittest
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from vector_engine import VectorIndex
 
-sys.stdout.reconfigure(encoding='utf-8')
 
+class TestVectorPrefilter(unittest.TestCase):
+    def test_prefilter_operators(self):
+        dim = 384
+        np.random.seed(55)
+        vecs = np.random.randn(4, dim).astype(np.float32)
+        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
 
-def main():
-    print("--- 🎯 Inverted Index Pre-Filtering Testi ---")
-    
-    model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        metas = [
+            {"category": "yazilim"},
+            {"category": "mutfak"},
+            {"category": "yazilim"},
+            {"category": "mutfak"}
+        ]
+        ids = [1, 2, 3, 4]
 
-    documents = [
-        {"id": 1, "text": "Python ve Rust performans karşılaştırması", "meta": {"category": "yazilim"}},
-        {"id": 2, "text": "Napoliten Pizza ve İtalyan Mutfağı", "meta": {"category": "mutfak"}},
-        {"id": 3, "text": "C++ ile oyun motoru geliştirme", "meta": {"category": "yazilim"}},
-        {"id": 4, "text": "Espresso ve filtre kahve demleme teknikleri", "meta": {"category": "mutfak"}}
-    ]
+        index = VectorIndex()
+        index.add_batch_with_metadata(ids, vecs, metas)
+        index.build_hnsw_index()
 
-    texts = [d["text"] for d in documents]
-    metas = [d["meta"] for d in documents]
-    ids = [d["id"] for d in documents]
-    embeddings = model.encode(texts, convert_to_numpy=True).astype(np.float32)
+        # Eşleşen filtre
+        res = index.search_filtered(vecs[1], top_k=2, filter_key="category", filter_value="mutfak", operator="==")
+        self.assertGreaterEqual(len(res), 1)
+        for doc_id, dist, meta in res:
+            self.assertEqual(meta.get("category"), "mutfak")
 
-    index = VectorIndex()
-    index.add_batch_with_metadata(ids, embeddings, metas)
-    index.build_hnsw_index()
+        # Var olmayan filtre
+        res_empty = index.search_filtered(vecs[1], top_k=2, filter_key="category", filter_value="uzay", operator="==")
+        self.assertEqual(len(res_empty), 0)
 
-    # TEST 1: Eşleşen Filtre
-    query = "Kahve ve kodlama"
-    q_vec = model.encode(query, convert_to_numpy=True).astype(np.float32)
-
-    print(f"\n❓ Sorgu: '{query}' -> 🎯 FİLTRE: category = 'mutfak'")
-    results = index.search_filtered(q_vec, top_k=2, filter_key="category", filter_value="mutfak", operator="==")
-    
-    for doc_id, dist, meta in results:
-        print(f"   • Bulunan ID: {doc_id} | Metadata: {meta}")
-
-    # TEST 2: Var Olmayan Filtre (Pre-filtering O(1) Hızında Boş Dönecek)
-    print(f"\n❓ Sorgu: '{query}' -> 🎯 FİLTRE: category = 'uzay' (Var Olmayan Kategori)")
-    results_empty = index.search_filtered(q_vec, top_k=2, filter_key="category", filter_value="uzay", operator="==")
-    print(f"   • Bulunan Sonuç Sayısı: {len(results_empty)} (O(1) süreyle saniyesinde elendi!)")
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

@@ -1,60 +1,49 @@
+import os
 import sys
-import time
+import unittest
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from vector_engine import VectorIndex
 
-sys.stdout.reconfigure(encoding='utf-8')
 
+class TestMetadataSearch(unittest.TestCase):
+    def test_filtered_search(self):
+        dim = 384
+        np.random.seed(101)
+        vecs = np.random.randn(5, dim).astype(np.float32)
+        vecs /= np.linalg.norm(vecs, axis=1, keepdims=True)
 
-def main():
-    print("--- 🏷️ Metadata Filtreli Anlamsal Vektör Araması ---")
+        metadatas = [
+            {"category": "yazilim", "year": "2026"},
+            {"category": "yazilim", "year": "2025"},
+            {"category": "evcil_hayvan", "year": "2026"},
+            {"category": "mutfak", "year": "2024"},
+            {"category": "mutfak", "year": "2026"}
+        ]
+        ids = list(range(5))
 
-    # 1. Model Yükleme
-    print("\n[1] Yapay zeka modeli yükleniyor...")
-    model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        index = VectorIndex()
+        index.add_batch_with_metadata(ids, vecs, metadatas)
+        index.build_hnsw_index()
 
-    # 2. Veri Seti (Metin + Metadata)
-    documents = [
-        {"text": "Python ve Rust ile yüksek performanslı sistemler geliştirilir.", "meta": {"category": "yazilim", "year": "2026"}},
-        {"text": "Yapay zeka modelleri vektör veritabanları ile desteklenir.", "meta": {"category": "yazilim", "year": "2025"}},
-        {"text": "Sokak kedileri ve köpekler soğukta barınak arar.", "meta": {"category": "evcil_hayvan", "year": "2026"}},
-        {"text": "İtalyan restoranlarında Napoliten pizza ve makarna meşhurdur.", "meta": {"category": "mutfak", "year": "2024"}},
-        {"text": "Espresso ve demleme kahve çeşitleri güne hızlı başlatır.", "meta": {"category": "mutfak", "year": "2026"}}
-    ]
+        # Filtresiz arama
+        res_unfiltered = index.search_filtered(vecs[0], top_k=2)
+        self.assertEqual(len(res_unfiltered), 2)
+        self.assertEqual(res_unfiltered[0][0], 0)
 
-    texts = [doc["text"] for doc in documents]
-    metadatas = [doc["meta"] for doc in documents]
+        # Filtreli arama: sadece 'mutfak' kategorisi
+        res_filtered = index.search_filtered(
+            vecs[0],
+            top_k=2,
+            filter_key="category",
+            filter_value="mutfak"
+        )
+        self.assertGreaterEqual(len(res_filtered), 1)
+        for doc_id, dist, meta in res_filtered:
+            self.assertEqual(meta.get("category"), "mutfak")
 
-    # 3. Vektörleştirme
-    print("\n[2] Vektörler üretiliyor...")
-    embeddings = model.encode(texts, convert_to_numpy=True).astype(np.float32)
-
-    # 4. Rust Motoruna Yükleme
-    index = VectorIndex()
-    ids = list(range(len(documents)))
-    index.add_batch_with_metadata(ids, embeddings, metadatas)
-    index.build_hnsw_index()
-
-    # 5. TEST 1: Filtresiz Arama
-    query_text = "Hangi sistemler ve diller kullanılır?"
-    print(f"\n❓ Sorgu: \"{query_text}\" (FİLTRESİZ)")
-    query_vector = model.encode(query_text, convert_to_numpy=True).astype(np.float32)
-    
-    results = index.search_filtered(query_vector, top_k=2, filter_key=None, filter_value=None)
-    for doc_id, dist, meta in results:
-        print(f"   • [{documents[doc_id]['text']}] | Metadata: {meta}")
-
-    # 6. TEST 2: Sadece 'yazilim' Kategorisi Filtresi
-    print(f"\n❓ Sorgu: \"Geliştirme ve yemekler\" -> 🎯 FİLTRE: category='mutfak'")
-    results_filtered = index.search_filtered(
-        query_vector, 
-        top_k=2, 
-        filter_key="category", 
-        filter_value="mutfak"
-    )
-    for doc_id, dist, meta in results_filtered:
-        print(f"   • [{documents[doc_id]['text']}] | Metadata: {meta}")
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

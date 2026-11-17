@@ -67,9 +67,12 @@ from api_server.app.schemas.agent import (
     ReActChatRequest,
     ReActChatResponse,
     ActionDecisionRequest,
-    ActionDecisionResponse
+    ActionDecisionResponse,
+    SwarmRequest,
+    SwarmResponse
 )
 from api_server.app.services.react_agent_service import react_agent_service
+from api_server.app.services.swarm_service import swarm_orchestrator
 
 @router.post("/react", response_model=ReActChatResponse)
 def react_agent_chat(req: ReActChatRequest):
@@ -87,6 +90,28 @@ def react_agent_chat(req: ReActChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ReAct Ajan hatası: {str(e)}")
 
+@router.post("/react/stream")
+def react_agent_chat_stream(req: ReActChatRequest):
+    """
+    ReAct Çok Adımlı Ajanı için SSE Canlı Akış (Streaming) Uç Noktası.
+    Düşünce adımlarını ve nihai cevabı daktilo efektiyle istemciye akıtır.
+    """
+    def event_stream():
+        try:
+            for event in react_agent_service.run_stream(
+                user_query=req.query,
+                max_steps=req.max_steps,
+                require_approval=req.require_approval
+            ):
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            err_payload = json.dumps({"type": "error", "message": str(e)}, ensure_ascii=False)
+            yield f"data: {err_payload}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
 @router.post("/action/decision", response_model=ActionDecisionResponse)
 def handle_action_decision(req: ActionDecisionRequest):
     """
@@ -101,5 +126,46 @@ def handle_action_decision(req: ActionDecisionRequest):
         return ActionDecisionResponse(**res)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Karar uygulama hatası: {str(e)}")
+
+
+@router.post("/swarm", response_model=SwarmResponse)
+def run_swarm_task(req: SwarmRequest):
+    """
+    Otonom Çoklu Ajan Sürüsü (Swarm):
+    Mimar (DAG Planlama) -> Geliştirici (Cerrahi Yama) -> Denetçi (Red-Team/Doğrulama)
+    iş birliği ve oto-düzeltme döngüsü ile görevi çözer.
+    """
+    try:
+        res = swarm_orchestrator.run_swarm(
+            task_instruction=req.task,
+            max_correction_loops=req.max_correction_loops,
+            auto_rollback_on_failure=req.auto_rollback_on_failure
+        )
+        return SwarmResponse(**res)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Swarm çalışma hatası: {str(e)}")
+
+
+@router.post("/swarm/stream")
+def stream_swarm_task(req: SwarmRequest):
+    """
+    Swarm iş birliği adımlarını daktilo/olay akışıyla (SSE) döner.
+    """
+    def event_stream():
+        try:
+            for event in swarm_orchestrator.stream_swarm(
+                task_instruction=req.task,
+                max_correction_loops=req.max_correction_loops,
+                auto_rollback_on_failure=req.auto_rollback_on_failure
+            ):
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"data: {payload}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            err_payload = json.dumps({"error": str(e)}, ensure_ascii=False)
+            yield f"data: {err_payload}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
 
 

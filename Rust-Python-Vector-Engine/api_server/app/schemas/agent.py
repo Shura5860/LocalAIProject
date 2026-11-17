@@ -38,3 +38,16 @@ class ActionDecisionResponse(BaseModel):
     result: Any
     message: str
 
+class SwarmRequest(BaseModel):
+    task: str
+    max_correction_loops: int = 2
+    auto_rollback_on_failure: bool = True
+
+class SwarmResponse(BaseModel):
+    task: str
+    status: str
+    total_events: int
+    events: List[Dict[str, Any]]
+    final_answer: str
+
+

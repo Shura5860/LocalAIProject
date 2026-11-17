@@ -4,7 +4,7 @@ import numpy as np
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from sentence_transformers import SentenceTransformer
-from api_server.app.core.config import db
+from api_server.app.core.config import db, allocate_doc_ids
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class MemoryService:
                 return False, f"Güvenlik Kalkanı: Hafıza zehirleme veya güvenlik kuralı manipülasyonu tespit edildi: '{pattern}'"
         return True, "Güvenli."
 
-    def remember_fact(self, fact: str, topic: str = "personal") -> Dict[str, Any]:
+    def remember_fact(self, fact: str, topic: str = "personal", importance: float = 1.0) -> Dict[str, Any]:
         """Kullanıcı hakkındaki önemli bir anıyı veya bilgiyi Rust HNSW vektör indeksine kalıcı olarak işler."""
         if not fact.strip():
             return {"status": "error", "message": "Boş bilgi kaydedilemez."}
@@ -82,12 +82,15 @@ class MemoryService:
             logger.warning(f"🛡️ [AI Security] Hafıza zehirleme girişimi engellendi: {fact}")
             return {"status": "error", "message": msg}
 
+        import time
         embeddings = self.embedder.encode([fact], convert_to_numpy=True).astype(np.float32)
-        doc_id = db.len()
+        doc_id = allocate_doc_ids(1)[0]
         meta = {
             "text": fact,
             "category": "user_memory",
-            "topic": topic
+            "topic": topic,
+            "importance": float(importance),
+            "created_at": float(time.time())
         }
 
         db.add_batch_with_metadata([doc_id], embeddings, [meta])
@@ -95,34 +98,71 @@ class MemoryService:
         return {"status": "success", "id": doc_id, "fact": fact}
 
     def recall_facts(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """Soruyla veya durumla ilgili geçmiş anıları HNSW üzerinden çeker."""
+        """Soruyla veya durumla ilgili geçmiş anıları HNSW ve zamansal çürüme (decay) skoruyla çeker."""
         if db.len() == 0:
             return []
 
+        import time
+        import math
+        now = time.time()
         query_vec = self.embedder.encode(query, convert_to_numpy=True).astype(np.float32)
         try:
             results = db.search_filtered(
                 query_vec,
-                top_k=top_k,
+                top_k=top_k * 2,
                 filter_key="category",
                 filter_value="user_memory",
                 operator="=="
             )
             recalled = []
             for doc_id, dist, meta in results:
+                importance = float(meta.get("importance", 1.0))
+                created_at = float(meta.get("created_at", now))
+                elapsed_days = (now - created_at) / 86400.0
+                decay = math.exp(-0.02 * elapsed_days)
+                effective_score = (1.0 / (1.0 + float(dist))) * importance * decay
+
                 recalled.append({
                     "id": doc_id,
                     "distance": float(dist),
+                    "decay_score": round(effective_score, 4),
                     "fact": meta.get("text", "")
                 })
-            return recalled
+
+            recalled.sort(key=lambda x: x["decay_score"], reverse=True)
+            return recalled[:top_k]
         except Exception:
             return []
 
+    @staticmethod
+    def load_project_rules(workspace_path: Optional[str] = None) -> List[str]:
+        """
+        Proje kurallarını (.cursorrules, .aura/rules, .aura/rules.md, project_rules.md) tarar ve yükler.
+        """
+        ws = workspace_path or os.environ.get("AURA_WORKSPACE_PATH") or os.getcwd()
+        candidate_files = [
+            os.path.join(ws, ".cursorrules"),
+            os.path.join(ws, ".aura", "rules"),
+            os.path.join(ws, ".aura", "rules.md"),
+            os.path.join(ws, "project_rules.md")
+        ]
+        rules = []
+        for path in candidate_files:
+            if os.path.exists(path) and os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8", errors="replace") as f:
+                        content = f.read().strip()
+                        if content:
+                            rules.append(f"[{os.path.basename(path)}]:\n{content}")
+                except Exception:
+                    pass
+        return rules
+
     def build_memory_prompt(self, user_query: str) -> str:
-        """Kullanıcı profilini ve alakalı anıları tek bir prompt bağlamı haline getirir."""
+        """Kullanıcı profilini, proje kurallarını ve alakalı anıları tek bir prompt bağlamı haline getirir."""
         profile = self.get_profile()
         relevant_memories = self.recall_facts(user_query, top_k=2)
+        project_rules = self.load_project_rules()
 
         prompt_lines = ["\n[KULLANICI PROFİLİ VE KİŞİSEL HAFIZA]"]
         if profile.get("name"):
@@ -139,7 +179,66 @@ class MemoryService:
             for m in relevant_memories:
                 prompt_lines.append(f"   - {m['fact']}")
 
-        prompt_lines.append("[KİŞİSELLEŞTİRME SONU]\n")
+        if project_rules:
+            prompt_lines.append("\n[PROJE MİMARİ KURALLARI VE DİREKTİFLER]")
+            for r in project_rules:
+                prompt_lines.append(r)
+
+        prompt_lines.append("[KİŞİSELLEŞTİRME VE KURALLAR SONU]\n")
         return "\n".join(prompt_lines)
 
+
+class ContextCompactor:
+    """
+    Intelligent Sliding-Window Context Compactor.
+    Bağlam taşması (Context Overflow) hatalarını engeller:
+    1. Mesaj listesinin tahmini token büyüklüğünü denetler.
+    2. Eşik değer (%75) aşıldığında eski konuşma turlarını otomatik olarak
+       süreç içi Rust HNSW veritabanına arşivler ve bağlamı sıkıştırır.
+    """
+    def __init__(self, max_context_tokens: int = 4096, compact_threshold: float = 0.75):
+        self.max_context_tokens = max_context_tokens
+        self.compact_threshold = compact_threshold
+
+    def estimate_tokens(self, messages: List[Dict[str, str]]) -> int:
+        total_chars = sum(len(m.get("content", "")) for m in messages)
+        return int(total_chars / 3.5)
+
+    def compact_if_needed(self, messages: List[Dict[str, str]], keep_last: int = 3) -> Tuple[List[Dict[str, str]], bool]:
+        if len(messages) <= keep_last + 1:
+            return messages, False
+
+        current_tokens = self.estimate_tokens(messages)
+        threshold_tokens = int(self.max_context_tokens * self.compact_threshold)
+
+        if current_tokens < threshold_tokens:
+            return messages, False
+
+        older_turns = messages[:-keep_last]
+        recent_turns = messages[-keep_last:]
+
+        summary_lines = []
+        for m in older_turns:
+            role = m.get("role", "unknown")
+            content = m.get("content", "").strip()
+            if content:
+                snippet = content[:150] + ("..." if len(content) > 150 else "")
+                summary_lines.append(f"{role}: {snippet}")
+
+        compressed_text = "Önceki Seans Özeti:\n" + "\n".join(summary_lines)
+
+        try:
+            memory_service.remember_fact(compressed_text, topic="conversation_archive")
+        except Exception:
+            pass
+
+        compacted_messages = [
+            {"role": "system", "content": f"[ARŞİV BAĞLAMI: {compressed_text}]"}
+        ] + recent_turns
+
+        return compacted_messages, True
+
+
 memory_service = MemoryService()
+context_compactor = ContextCompactor()
+

@@ -7,28 +7,29 @@
 set -e
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "$DIR"
+PROJECT_ROOT="$( cd "$DIR/.." >/dev/null 2>&1 && pwd )"
+cd "$PROJECT_ROOT"
 
 echo "========================================================================"
 echo "📦 TİCARİ MÜŞTERİ DAĞITIM PAKETİ OLUŞTURULUYOR"
 echo "========================================================================"
 
-RELEASE_DIR="$DIR/release_bundle"
+RELEASE_DIR="$PROJECT_ROOT/release_bundle"
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR/bin"
 mkdir -p "$RELEASE_DIR/models"
 mkdir -p "$RELEASE_DIR/web"
 
 echo "🦀 [1/4] Rust LLM motoru 'release' modunda derleniyor ve semboller siliniyor (strip)..."
-cd "$DIR/Rust-LLM-Engine"
+cd "$PROJECT_ROOT/Rust-LLM-Engine"
 cargo build --release
 strip --strip-all target/release/rust-llm-engine 2>/dev/null || true
 cp target/release/rust-llm-engine "$RELEASE_DIR/bin/"
 
-cd "$DIR"
+cd "$PROJECT_ROOT"
 
 echo "🎨 [2/4] Masaüstü arayüz statik dosyaları kopyalanıyor..."
-cp -r "$DIR/desktop_app/src"/* "$RELEASE_DIR/web/"
+cp -r "$PROJECT_ROOT/desktop_app/src"/* "$RELEASE_DIR/web/"
 
 echo "🔑 [3/4] Lisans yöneticisi ve başlatıcı ekleniyor..."
 cat << 'LAUNCHER' > "$RELEASE_DIR/start.sh"

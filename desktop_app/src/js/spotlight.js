@@ -52,14 +52,20 @@ document.addEventListener("DOMContentLoaded", () => {
       terminal.innerHTML = `<span style="color:var(--accent-purple);">⚡ [Komut Yürütülüyor]:</span> ${q}\n<span style="color:var(--text-dim);">Lütfen bekleyin...</span>`;
 
       try {
+        const chk = document.getElementById("chk-human-approval");
+        const requireApproval = chk ? chk.checked : true;
+
         const res = await fetch("http://127.0.0.1:8000/agent/react", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: q, max_steps: 3, require_approval: false })
+          body: JSON.stringify({ query: q, max_steps: 3, require_approval: requireApproval })
         });
         if (res.ok) {
           const data = await res.json();
           let out = `\n<span style="color:var(--accent-cyan);">=== ÇIKTI / SONUÇ ===</span>\n${data.final_answer}\n`;
+          if (data.status === "WAITING_APPROVAL" && data.pending_action) {
+            out += `\n<span style="color:var(--accent-amber);">🛡️ [İNSAN ONAYI GEREKLİ]: '${data.pending_action.tool}' aracı ana ekranda onayınızı bekliyor.</span>\n`;
+          }
           if (data.trace && data.trace.length > 0) {
             out += `\n<span style="color:var(--text-dim);">[İşlenen Adımlar: ${data.total_steps}]</span>`;
           }

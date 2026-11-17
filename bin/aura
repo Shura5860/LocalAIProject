@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""
+AURA-CORE: Unified Command-Line Interface (CLI).
+Provides one-command developer ergonomics matching Ollama, Aider & LM Studio:
+- aura serve: Starts the local high-performance API server.
+- aura run <model_id>: Interactive streaming chat REPL directly in your terminal.
+- aura swarm "<task>": Autonomous 3-agent swarm execution (Architect -> Coder -> Verifier).
+- aura models list / search / pull: Native model hub manager with streaming resume.
+- aura status: Hardware inspection (VRAM, CPU headroom, active models).
+"""
+
+import sys
+import os
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+VENV_PYTHON = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
+
+# Auto-reexec with local venv python if available
+if os.path.exists(VENV_PYTHON) and sys.executable != VENV_PYTHON:
+    os.execv(VENV_PYTHON, [VENV_PYTHON] + sys.argv)
+
+import argparse
+import time
+import json
+import httpx
+
+API_BASE = os.environ.get("AURA_API_BASE", "http://127.0.0.1:8000")
+
+# ANSI Color Codes
+CYAN = "\033[96m"
+PURPLE = "\033[95m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+RESET = "\033[0m"
+
+
+def print_banner():
+    banner = f"""{CYAN}{BOLD}
+    ╔═════════════════════════════════════════════════════════════╗
+    ║        █████╗ ██╗   ██╗██████╗  █████╗        CORE          ║
+    ║       ██╔══██╗██║   ██║██╔══██╗██╔══██╗       LOCAL AI      ║
+    ║       ███████║██║   ██║██████╔╝███████║       SWARM ENGINE  ║
+    ║       ██╔══██║██║   ██║██╔══██╗██╔══██║       RUST HNSW     ║
+    ║       ██║  ██║╚██████╔╝██║  ██║██║  ██║                     ║
+    ╚═════════════════════════════════════════════════════════════╝{RESET}
+    {DIM}Privacy-First • In-Process Rust Vector Index • Autonomous Swarm{RESET}
+    """
+    print(banner)
+
+
+def check_server_online() -> bool:
+    try:
+        with httpx.Client(timeout=1.5) as client:
+            res = client.get(f"{API_BASE}/")
+            return res.status_code == 200
+    except Exception:
+        return False
+
+
+def cmd_serve(args):
+    """FastAPI REST & SSE sunucusunu başlatır."""
+    print_banner()
+    port = args.port or 8000
+    host = args.host or "127.0.0.1"
+    print(f"{GREEN}🚀 AURA-CORE API Sunucusu Başlatılıyor...{RESET}")
+    print(f"{DIM}Adres: http://{host}:{port}{RESET}")
+    print(f"{DIM}OpenAI Uyumlu Uç Nokta: http://{host}:{port}/v1{RESET}\n")
+
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "Rust-Python-Vector-Engine"))
+    import uvicorn
+    uvicorn.run("api_server.app.main:app", host=host, port=port, reload=args.reload)
+
+
+def cmd_status(args):
+    """Donanım ve sunucu durumunu denetler."""
+    print_banner()
+    online = check_server_online()
+    status_str = f"{GREEN}● ÇALIŞIYOR{RESET}" if online else f"{RED}○ ÇEVRİMDIŞI{RESET}"
+    print(f"Sunucu Durumu: {status_str} ({API_BASE})")
+
+    if not online:
+        print(f"\n{YELLOW}İpucu: Sunucuyu başlatmak için: {BOLD}aura serve{RESET}")
+        return
+
+    with httpx.Client(timeout=3.0) as client:
+        # Hardware
+        hw_res = client.get(f"{API_BASE}/models/hardware")
+        if hw_res.status_code == 200:
+            hw = hw_res.json()
+            print(f"\n{BOLD}══ Donanım & Çıkarım Kaynakları ══{RESET}")
+            print(f"RAM:        {hw.get('ram', {}).get('available_gb', '?')} GB Boş / {hw.get('ram', {}).get('total_gb', '?')} GB Toplam")
+            gpu = hw.get("gpu", {})
+            gpu_name = gpu.get("name", "Bilinmiyor")
+            gpu_vram = gpu.get("vram_free_gb", 0.0)
+            print(f"GPU:        {gpu_name} (Boş VRAM: {gpu_vram} GB)")
+            print(f"Önerilen:   {CYAN}{hw.get('recommended_model_id', 'Bilinmiyor')}{RESET}")
+
+        # Active Model
+        active_res = client.get(f"{API_BASE}/models/active")
+        if active_res.status_code == 200:
+            act = active_res.json()
+            print(f"\n{BOLD}══ Aktif Model ══{RESET}")
+            print(f"Model ID:   {GREEN}{act.get('id', '?')}{RESET}")
+            print(f"Parametre:  {act.get('parameters', '?')}")
+            print(f"Açıklama:   {act.get('recommended_for', '?')}")
+
+
+def cmd_run(args):
+    """Terminalde canlı streaming daktilo efektli interaktif sohbet."""
+    print_banner()
+    if not check_server_online():
+        print(f"{RED}Hata: AURA-CORE sunucusu çevrimdışı!{RESET}")
+        print(f"Lütfen önce başka bir terminalde {BOLD}aura serve{RESET} komutunu çalıştırın.")
+        return
+
+    with httpx.Client(timeout=5.0) as client:
+        if args.model:
+            print(f"Model değiştiriliyor: {CYAN}{args.model}{RESET}...")
+            client.post(f"{API_BASE}/models/switch", json={"model_id": args.model})
+
+        active_res = client.get(f"{API_BASE}/models/active").json()
+        print(f"{GREEN}✓ Aktif Model:{RESET} {BOLD}{active_res.get('name', 'Qwen')}{RESET} ({active_res.get('id')})")
+        print(f"{DIM}Çıkmak için '/exit' veya Ctrl+C, modeli değiştirmek için '/model <id>'{RESET}\n")
+
+        while True:
+            try:
+                prompt = input(f"{CYAN}{BOLD}aura>{RESET} ").strip()
+                if not prompt:
+                    continue
+                if prompt in ("/exit", "exit", "quit", ":q"):
+                    print(f"{DIM}Görüşmek üzere!{RESET}")
+                    break
+                if prompt.startswith("/model "):
+                    target_m = prompt.split(" ", 1)[1].strip()
+                    res = client.post(f"{API_BASE}/models/switch", json={"model_id": target_m})
+                    if res.status_code == 200:
+                        print(f"{GREEN}✓ Model başarıyla değiştirildi: {target_m}{RESET}\n")
+                    else:
+                        print(f"{RED}Model değiştirilemedi.{RESET}\n")
+                    continue
+
+                # Streaming SSE Request
+                print(f"{PURPLE}aura:{RESET} ", end="", flush=True)
+                with client.stream(
+                    "POST",
+                    f"{API_BASE}/agent/chat/stream",
+                    json={"query": prompt, "max_tokens": 500},
+                    timeout=60.0
+                ) as stream:
+                    for line in stream.iter_lines():
+                        if line.startswith("data: "):
+                            data_str = line[6:].strip()
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                token_data = json.loads(data_str)
+                                if "token" in token_data:
+                                    print(token_data["token"], end="", flush=True)
+                            except Exception:
+                                pass
+                print("\n")
+            except KeyboardInterrupt:
+                print(f"\n{DIM}Oturum kapatıldı.{RESET}")
+                break
+
+
+def cmd_swarm(args):
+    """Çoklu-Ajan Sürüsü (Mimar + Coder + Denetçi) CLI arayüzü."""
+    print_banner()
+    if not check_server_online():
+        print(f"{RED}Hata: AURA-CORE sunucusu çevrimdışı!{RESET} Önce {BOLD}aura serve{RESET} başlatın.")
+        return
+
+    task = args.task
+    print(f"{YELLOW}{BOLD}🐝 ÇOKLU-AJAN SÜRÜSÜ GÖREVİ BAŞLATILIYOR:{RESET}")
+    print(f"'{BOLD}{task}{RESET}'\n")
+
+    with httpx.Client(timeout=120.0) as client:
+        with client.stream(
+            "POST",
+            f"{API_BASE}/agent/swarm/stream",
+            json={"task": task, "max_correction_loops": 2, "auto_rollback_on_failure": True}
+        ) as stream:
+            for line in stream.iter_lines():
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        ev = json.loads(data_str)
+                        agent = ev.get("agent")
+                        msg = ev.get("message", "")
+
+                        if agent == "architect":
+                            print(f"{PURPLE}{BOLD}[📐 MİMAR - ARCHITECT]{RESET} {msg}")
+                            plan = ev.get("plan", {})
+                            if "steps" in plan:
+                                for idx, s in enumerate(plan["steps"], 1):
+                                    print(f"   {DIM}{idx}. {s}{RESET}")
+                        elif agent == "coder":
+                            print(f"{CYAN}{BOLD}[💻 GELİŞTİRİCİ - CODER]{RESET} {msg}")
+                            if ev.get("target_file"):
+                                print(f"   {DIM}Dosya: {ev['target_file']} -> {ev.get('result', '')}{RESET}")
+                        elif agent == "verifier":
+                            verdict = ev.get("verdict", "")
+                            color = GREEN if verdict == "PASSED" else RED
+                            print(f"{color}{BOLD}[🔍 DENETÇİ - VERIFIER]{RESET} [{verdict}] {msg}")
+                            if ev.get("error"):
+                                print(f"   {RED}{ev['error']}{RESET}")
+                        elif ev.get("status"):
+                            print(f"\n{GREEN}{BOLD}✨ [SONUÇ]:{RESET} {ev.get('message')}")
+                    except Exception:
+                        pass
+    print()
+
+
+def cmd_models(args):
+    """Model katalog, arama ve indirme alt komutları."""
+    sub = args.models_action
+
+    if not check_server_online():
+        print(f"{RED}Hata: Sunucu çevrimdışı!{RESET} Önce {BOLD}aura serve{RESET} başlatın.")
+        return
+
+    with httpx.Client(timeout=30.0) as client:
+        if sub == "list":
+            res = client.get(f"{API_BASE}/models").json()
+            print(f"\n{BOLD}════════════════════ YEREL GGUF MODEL KATALOĞU ════════════════════{RESET}")
+            print(f"{'ID':<24} {'BOYUT':<10} {'DURUM':<12} {'DOSYA':<28}")
+            print("─" * 74)
+            for m in res:
+                status = f"{GREEN}● Aktif{RESET}" if m.get("is_active") else f"{DIM}○ Boşta{RESET}"
+                print(f"{m['id']:<24} {str(m['disk_size_gb']) + ' GB':<10} {status:<22} {m['filename']:<28}")
+            print()
+
+        elif sub == "search":
+            query = args.query or "qwen"
+            print(f"🔍 HuggingFace Hub taranıyor: '{query}'...")
+            res = client.get(f"{API_BASE}/models/hub/search?query={query}").json()
+            print(f"\n{BOLD}═════════════════ HUGGING FACE GGUF ARAMA SONUÇLARI ═════════════════{RESET}")
+            for item in res:
+                rec = item.get("recommended_quant", "q4_k_m.gguf")
+                print(f"📦 {CYAN}{BOLD}{item['id']}{RESET}")
+                print(f"   Geliştirici: {item.get('author')} | İndirme: {item.get('downloads', 0):,} | Beğeni: {item.get('likes', 0)}")
+                print(f"   İndirme Komutu: {YELLOW}aura models pull {item['id']} {rec}{RESET}\n")
+
+        elif sub == "pull":
+            repo = args.repo
+            filename = args.filename
+            if not repo or not filename:
+                print(f"{RED}Kullanım: aura models pull <repo> <filename>{RESET}")
+                print(f"Örnek: aura models pull Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
+                return
+
+            print(f"📥 İndiriliyor: {CYAN}{repo}/{filename}{RESET}...")
+            with client.stream(
+                "POST",
+                f"{API_BASE}/models/pull",
+                json={"repo": repo, "filename": filename},
+                timeout=3600.0
+            ) as stream:
+                for line in stream.iter_lines():
+                    if line.startswith("data: "):
+                        data_str = line[6:].strip()
+                        if not data_str:
+                            continue
+                        try:
+                            ev = json.loads(data_str)
+                            if ev.get("status") == "downloading":
+                                pct = ev.get("progress", 0.0)
+                                speed = ev.get("speed_mb", 0.0)
+                                downloaded = ev.get("downloaded_gb", 0.0)
+                                total = ev.get("total_gb", 0.0)
+                                bar_len = 30
+                                filled = int(bar_len * (pct / 100))
+                                bar = "█" * filled + "░" * (bar_len - filled)
+                                sys.stdout.write(f"\r{CYAN}[{bar}]{RESET} {pct:>5.1f}% | {speed:>5.1f} MB/s | {downloaded:>4.2f}/{total:>4.2f} GB")
+                                sys.stdout.flush()
+                            elif ev.get("status") == "completed":
+                                print(f"\n{GREEN}✓ Model başarıyla indirildi ve kataloğa eklendi!{RESET}")
+                                print(f"Model ID: {BOLD}{ev.get('model_id')}{RESET}")
+                                break
+                            elif ev.get("status") == "error":
+                                print(f"\n{RED}İndirme hatası: {ev.get('message')}{RESET}")
+                                break
+                        except Exception:
+                            pass
+            print()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="AURA-CORE Unified CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # serve
+    p_serve = subparsers.add_parser("serve", help="Start the FastAPI API & SSE daemon")
+    p_serve.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    p_serve.add_argument("--reload", action="store_true", help="Auto reload on code change")
+
+    # status
+    subparsers.add_parser("status", help="Inspect hardware resources and active models")
+
+    # run
+    p_run = subparsers.add_parser("run", help="Interactive streaming chat REPL")
+    p_run.add_argument("model", nargs="?", default=None, help="Optional model ID to switch to")
+
+    # swarm
+    p_swarm = subparsers.add_parser("swarm", help="Autonomous 3-Agent Swarm execution")
+    p_swarm.add_argument("task", help="Coding or architectural task description")
+
+    # models
+    p_models = subparsers.add_parser("models", help="Model catalog, HF Hub search & download")
+    models_sub = p_models.add_subparsers(dest="models_action")
+    models_sub.add_parser("list", help="List local model catalog")
+    p_search = models_sub.add_parser("search", help="Search GGUF models on HuggingFace Hub")
+    p_search.add_argument("query", nargs="?", default="qwen", help="Search keyword")
+    p_pull = models_sub.add_parser("pull", help="Download a GGUF model with streaming resume")
+    p_pull.add_argument("repo", help="Hugging Face repo (e.g. Qwen/Qwen2.5-Coder-3B-Instruct-GGUF)")
+    p_pull.add_argument("filename", help="GGUF filename (e.g. qwen2.5-coder-3b-instruct-q4_k_m.gguf)")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        print_banner()
+        parser.print_help()
+        return
+
+    if args.command == "serve":
+        cmd_serve(args)
+    elif args.command == "status":
+        cmd_status(args)
+    elif args.command == "run":
+        cmd_run(args)
+    elif args.command == "swarm":
+        cmd_swarm(args)
+    elif args.command == "models":
+        cmd_models(args)
+
+
+if __name__ == "__main__":
+    main()
+

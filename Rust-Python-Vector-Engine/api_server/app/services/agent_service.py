@@ -11,12 +11,12 @@ class AgentService:
     def __init__(self):
         self.llm_bridge = RustLLMBridge()
 
-    def run(self, user_query: str, max_tokens: int = 300) -> Dict[str, Any]:
+    def run(self, user_query: str, max_tokens: int = 300, require_approval: bool = True) -> Dict[str, Any]:
         tools_desc = tool_registry.get_tools_prompt_description()
-        from api_server.app.core.guardrails import CONSTITUTION_PROMPT
+        from api_server.app.core.guardrails import CONSTITUTION_PROMPT, is_approval_required
 
         system_prompt = (
-            "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n"
+            "<|im_start|>system\n"
             f"{CONSTITUTION_PROMPT}\n"
             "Sen gelişmiş araçları (tools) kullanabilen akıllı ve otonom bir yapay zeka asistanısın.\n"
             "Kullanıcının isteğini yerine getirmek için gerekirse aşağıdaki araçlardan birini çağırabilirsin:\n\n"
@@ -25,10 +25,10 @@ class AgentService:
             "1. Eğer kullanıcının sorusu bir araç (hesaplama, sistem bilgisi, web araması, kod çalıştırma) gerektiriyorsa, YALNIZCA şu JSON formatında yanıt ver:\n"
             '{"action": "tool_call", "tool": "<araç_adı>", "args": {<parametreler>}}\n'
             "2. Eğer araç çağırmak gerekmiyorsa doğrudan normal bir asistan gibi kullanıcıya cevap ver.\n"
-            "<|eot_id|>\n"
-            f"<|start_header_id|>user<|end_header_id|>\n"
-            f"{user_query}<|eot_id|>\n"
-            "<|start_header_id|>assistant<|end_header_id|>\n"
+            "<|im_end|>\n"
+            f"<|im_start|>user\n"
+            f"{user_query}<|im_end|>\n"
+            "<|im_start|>assistant\n"
         )
 
         # İlk çıkarım (LLM Kararı)
@@ -53,8 +53,17 @@ class AgentService:
             return {
                 "query": user_query,
                 "answer": f"Model bilinmeyen bir araç çağırmak istedi: '{tool_name}'",
-                "tool_used": tool_name,
+                "tool_used": {"name": tool_name, "args": tool_args},
                 "tool_result": None
+            }
+
+        # HUMAN-IN-THE-LOOP (HITL) Güvenlik Kalkanı
+        if require_approval and is_approval_required(tool_name, tool_args):
+            return {
+                "query": user_query,
+                "answer": f"🛡️ Güvenlik Kalkanı (HITL): '{tool_name}' kritik bir sistem aracıdır ve doğrudan çalıştırılamaz. Lütfen insan onaylı '/agent/react' modunu kullanın.",
+                "tool_used": {"name": tool_name, "args": tool_args},
+                "tool_result": "BLOCKED_REQUIRES_HITL_APPROVAL"
             }
 
         # Aracı çalıştır
@@ -76,10 +85,10 @@ class AgentService:
         # Aracı çalıştırdıktan sonra sonucu modele verip son cevabı ürettirme
         followup_prompt = (
             f"{system_prompt}"
-            f'{{"action": "tool_call", "tool": "{tool_name}", "args": {json.dumps(tool_args)}}}<|eot_id|>\n'
-            f"<|start_header_id|>tool<|end_header_id|>\n"
-            f"{json.dumps(tool_result, ensure_ascii=False)}<|eot_id|>\n"
-            f"<|start_header_id|>assistant<|end_header_id|>\n"
+            f'{{"action": "tool_call", "tool": "{tool_name}", "args": {json.dumps(tool_args)}}}<|im_end|>\n'
+            f"<|im_start|>tool\n"
+            f"{json.dumps(tool_result, ensure_ascii=False)}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
         )
 
         final_answer = self.llm_bridge.generate(followup_prompt, max_tokens=max_tokens)

@@ -1,40 +1,45 @@
+import os
 import sys
+import unittest
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from vector_engine import VectorIndex
 
-sys.stdout.reconfigure(encoding='utf-8')
 
+class TestVectorNorm(unittest.TestCase):
+    def test_normalization_and_cosine_distance(self):
+        dim = 384
+        np.random.seed(42)
+        # 1. ve 2. vektörler çok yakın, 3. vektör zıt/uzak
+        base = np.random.randn(dim).astype(np.float32)
+        base /= np.linalg.norm(base)
 
-def main():
-    print("--- 📐 Normalization & Cosine Distance Testi ---")
-    
-    model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        similar = base + 0.05 * np.random.randn(dim).astype(np.float32)
+        similar /= np.linalg.norm(similar)
 
-    documents = [
-        {"id": 1, "text": "Yapay zeka ve derin öğrenme algoritmaları son derece hızlı gelişiyor."},
-        {"id": 2, "text": "Makine öğrenmesi modelleri ve veri analitiği teknikleri."},
-        {"id": 3, "text": "Evde lezzetli bir İtalyan makarnası pişirmenin püf noktaları."}
-    ]
+        distant = -base + 0.05 * np.random.randn(dim).astype(np.float32)
+        distant /= np.linalg.norm(distant)
 
-    texts = [d["text"] for d in documents]
-    ids = [d["id"] for d in documents]
-    embeddings = model.encode(texts, convert_to_numpy=True).astype(np.float32)
+        vecs = np.vstack([base, similar, distant])
+        ids = [1, 2, 3]
 
-    index = VectorIndex()
-    index.add_batch_with_metadata(ids, embeddings, [{} for _ in ids])
-    index.build_hnsw_index()
+        index = VectorIndex()
+        index.add_batch_with_metadata(ids, vecs, [{} for _ in ids])
+        index.build_hnsw_index()
 
-    query = "Yapay zeka ve makine öğrenimi"
-    q_vec = model.encode(query, convert_to_numpy=True).astype(np.float32)
+        results = index.search_filtered(base, top_k=3)
+        self.assertEqual(len(results), 3)
+        # İlk sonuç kendisi olmalı (dist ~ 0)
+        self.assertEqual(results[0][0], 1)
+        self.assertAlmostEqual(results[0][1], 0.0, places=4)
+        # İkinci sonuç en yakın vektör olmalı (ID 2)
+        self.assertEqual(results[1][0], 2)
+        # Üçüncü sonuç en uzak vektör olmalı (ID 3)
+        self.assertEqual(results[2][0], 3)
+        self.assertGreater(results[2][1], results[1][1])
 
-    print(f"\n❓ Sorgu: '{query}'")
-    results = index.search_filtered(q_vec, top_k=3)
-    
-    for doc_id, dist, _ in results:
-        doc_text = next(d['text'] for d in documents if d['id'] == doc_id)
-        # Distance skorunun ne kadar 0'a yakın olduğunu gözlemliyoruz
-        print(f"   • [ID: {doc_id}] Distance: {dist:.4f} | Metin: '{doc_text}'")
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

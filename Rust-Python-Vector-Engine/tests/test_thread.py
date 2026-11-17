@@ -1,57 +1,53 @@
+import os
 import sys
+import unittest
 import concurrent.futures
 import random
-import time
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from vector_engine import VectorIndex
 
-sys.stdout.reconfigure(encoding='utf-8')
 
+class TestVectorThreadSafety(unittest.TestCase):
+    def test_concurrent_readers_and_writers(self):
+        dim = 384
+        np.random.seed(42)
+        base_vecs = np.random.randn(3, dim).astype(np.float32)
+        base_vecs /= np.linalg.norm(base_vecs, axis=1, keepdims=True)
 
-# Hazırlık
-model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-index = VectorIndex()
+        index = VectorIndex()
+        index.add_batch_with_metadata([1, 2, 3], base_vecs, [{"cat": "dev"} for _ in range(3)])
+        index.build_hnsw_index()
 
-# İlk Veri
-texts = ["Python programlama dili", "Rust sistem kodlama dili", "FastAPI web servisi"]
-embeddings = model.encode(texts, convert_to_numpy=True).astype(np.float32)
-metas = [{"cat": "dev"} for _ in texts]
-index.add_batch_with_metadata([1, 2, 3], embeddings, metas)
-index.build_hnsw_index()
+        def reader():
+            for _ in range(10):
+                q = np.random.randn(dim).astype(np.float32)
+                q /= np.linalg.norm(q)
+                res = index.search_filtered(q, top_k=2)
+                self.assertIsNotNone(res)
 
-def reader_worker(worker_id):
-    """Aynı anda ARAMA yapan okuyucu thread'ler"""
-    for _ in range(5):
-        query = "yazılım ve kodlama"
-        q_vec = model.encode(query, convert_to_numpy=True).astype(np.float32)
-        res = index.search_filtered(q_vec, top_k=2)
-        print(f"📖 [Reader Thread-{worker_id}] {len(res)} sonuç buldu.")
-        time.sleep(0.01)
+        def writer(w_id):
+            for i in range(3):
+                v = np.random.randn(dim).astype(np.float32)
+                v /= np.linalg.norm(v)
+                doc_id = w_id * 100 + i + 10
+                index.add_batch_with_metadata([doc_id], v.reshape(1, -1), [{"cat": "dyn"}])
+                index.build_hnsw_index()
 
-def writer_worker(worker_id):
-    """Aynı anda YAZMA yapan yazıcı thread'ler"""
-    doc_id = random.randint(100, 999)
-    vec = model.encode("Yeni dinamik içerik", convert_to_numpy=True).astype(np.float32)
-    index.add_batch_with_metadata([doc_id], vec, [{"cat": "dyn"}])
-    index.build_hnsw_index()
-    print(f"✍️ [Writer Thread-{worker_id}] ID: {doc_id} verisini ekledi!")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            futures = []
+            for i in range(3):
+                futures.append(executor.submit(reader))
+            for i in range(3):
+                futures.append(executor.submit(writer, i))
 
-def main():
-    print("--- ⚡ Thread-Safety & Multi-threading Stres Testi ---")
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        futures = []
-        # 5 Okuyucu, 3 Yazıcı thread'i aynı anda başlatıyoruz
-        for i in range(5):
-            futures.append(executor.submit(reader_worker, i))
-        for i in range(3):
-            futures.append(executor.submit(writer_worker, i))
+            for f in concurrent.futures.as_completed(futures):
+                f.result()
 
-        concurrent.futures.wait(futures)
+        self.assertGreaterEqual(index.len(), 3)
 
-    print(f"\n✅ Tüm thread'ler başarıyla bitti! Hiçbir çakışma/çökme yaşanmadı.")
-    print(f"📊 Toplam Aktif Doküman: {index.len()}")
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

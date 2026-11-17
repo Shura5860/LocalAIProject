@@ -81,7 +81,7 @@ def backup_file_before_write(file_path: str):
 
 # Human-In-The-Loop (HITL) İnsan Onay Kuralı
 # Bu araçlar sistemi veya dosyaları kalıcı olarak değiştirdiği için onay gerektirir
-CRITICAL_TOOLS = ["write_file", "run_terminal_command"]
+CRITICAL_TOOLS = ["write_file", "apply_diff", "apply_multi_diff", "run_terminal_command", "corten_system_power"]
 
 AUDIT_LOG_FILE = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../../hitl_audit.log")

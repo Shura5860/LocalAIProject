@@ -8,19 +8,20 @@
 set -e
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "$DIR"
+PROJECT_ROOT="$( cd "$DIR/.." >/dev/null 2>&1 && pwd )"
+cd "$PROJECT_ROOT"
 
 echo "========================================================================"
 echo "🛡️ TİCARİ İKİLİ (COMMERCIAL BINARY) DERLEME SÜRECİ BAŞLATILIYOR"
 echo "========================================================================"
 
-OUTPUT_DIR="$DIR/dist"
+OUTPUT_DIR="$PROJECT_ROOT/dist"
 mkdir -p "$OUTPUT_DIR"
 
 echo "⚡ [1/2] Nuitka ile Python modülleri C++ makine koduna derleniyor..."
 echo "ℹ️ Orijinal Python kodlarınız güvendedir ve asla değiştirilmez."
 
-"$DIR/.venv/bin/python" -m nuitka \
+"$PROJECT_ROOT/.venv/bin/python" -m nuitka \
     --standalone \
     --assume-yes-for-downloads \
     --output-dir="$OUTPUT_DIR" \
@@ -31,7 +32,7 @@ echo "ℹ️ Orijinal Python kodlarınız güvendedir ve asla değiştirilmez."
     --include-package=fastapi \
     --include-package=uvicorn \
     --nofollow-import-to=pytest,unittest \
-    "$DIR/Rust-Python-Vector-Engine/standalone_entry.py"
+    "$PROJECT_ROOT/Rust-Python-Vector-Engine/standalone_entry.py"
 
 echo "✅ [2/2] Derleme tamamlandı! Çıktı: $OUTPUT_DIR/standalone_entry.dist/"
 echo "Tüm kaynak kodlar C++ makine koduna gömüldü; diskte hiçbir .py dosyası kalmadı."

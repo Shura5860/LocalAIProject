@@ -9,8 +9,21 @@ logger = logging.getLogger(__name__)
 class ModelService:
     def __init__(self):
         self.base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
-        self.models_dir = os.path.join(self.base_dir, "Rust-LLM-Engine/models")
-        os.makedirs(self.models_dir, exist_ok=True)
+        env_models_dir = os.environ.get("AURA_MODELS_DIR")
+        repo_models_dir = os.path.join(self.base_dir, "Rust-LLM-Engine/models")
+
+        if env_models_dir:
+            self.models_dir = os.path.abspath(env_models_dir)
+        elif os.path.exists(os.path.join(self.base_dir, "Rust-LLM-Engine")):
+            self.models_dir = repo_models_dir
+        else:
+            self.models_dir = os.path.expanduser("~/.aura/models")
+
+        try:
+            os.makedirs(self.models_dir, exist_ok=True)
+        except Exception:
+            self.models_dir = "/tmp/aura_models"
+            os.makedirs(self.models_dir, exist_ok=True)
 
         # Ön Tanımlı Model Profilleri Kataloğu
         self.catalog = {

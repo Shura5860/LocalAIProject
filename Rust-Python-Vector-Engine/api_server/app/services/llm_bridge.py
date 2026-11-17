@@ -31,7 +31,28 @@ class RustLLMBridge:
         return os.path.exists(self.binary_path) and os.path.exists(self.model_path)
 
 
+    def generate_structured(self, prompt: str, grammar_type: str = "json", max_tokens: int = 256) -> str:
+        """GBNF gramer kısıtlamalı çıkarım köprüsü."""
+        if os.environ.get("TESTING", "0") == "1" or os.environ.get("MOCK_LLM", "0") == "1":
+            return '{"thought": "Test modunda deterministik analiz yapıldı.", "action": null, "final_answer": "Başarılı."}'
+
+        try:
+            from api_server.app.services.inference_engine import production_engine
+            if production_engine.is_available():
+                return production_engine.generate_structured(prompt=prompt, grammar_type=grammar_type, max_tokens=max_tokens)
+        except Exception as e:
+            logger.warning(f"Production engine structured çağrısı başarısız: {e}")
+
+        return self.generate(prompt=prompt, max_tokens=max_tokens)
+
     def generate(self, prompt: str, max_tokens: int = 256) -> str:
+        # Test / Mock ortamı kontrolü: CPU kilitlemelerini önler
+        if os.environ.get("TESTING", "0") == "1" or os.environ.get("MOCK_LLM", "0") == "1":
+            return (
+                f"[Rust-LLM-Engine Simülasyon Yanıtı]\n"
+                f"Sistem test modunda çalışıyor."
+            )
+
         # 1. Öncelik: Production Inference Engine (BPE Tokenizer & llama_cpp C++ AVX2 Motoru)
         try:
             from api_server.app.services.inference_engine import production_engine
@@ -46,6 +67,26 @@ class RustLLMBridge:
                 f"[Rust-LLM-Engine Simülasyon Yanıtı]\n"
                 f"Model veya binary henüz derlenmedi. Sistem RAG ve Ajan simülasyon modunda hazır!"
             )
+
+    def generate_stream(self, prompt: str, max_tokens: int = 256):
+        """Token token canlı akış (Streaming) köprüsü."""
+        if os.environ.get("TESTING", "0") == "1" or os.environ.get("MOCK_LLM", "0") == "1":
+            for word in ["Test", " modunda", " canlı", " yanıt", " akıtılıyor."]:
+                yield word + " "
+            return
+
+        try:
+            from api_server.app.services.inference_engine import production_engine
+            if production_engine.is_available():
+                for token in production_engine.generate_stream(prompt=prompt, max_tokens=max_tokens):
+                    yield token
+                return
+        except Exception as e:
+            logger.warning(f"Production engine stream çağrısı başarısız: {e}")
+
+        # Binary fallback (single batch)
+        full_text = self.generate(prompt=prompt, max_tokens=max_tokens)
+        yield full_text
 
         cmd = [
             self.binary_path,
