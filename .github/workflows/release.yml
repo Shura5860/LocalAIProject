@@ -1,0 +1,71 @@
+name: Release Publisher
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Portable Bundle & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+          python -m pip install --upgrade pip
+          pip install maturin
+
+      - name: Build Native Rust Vector Engine
+        run: |
+          pip install ./Rust-Python-Vector-Engine/vector_engine
+
+      - name: Package Standalone Portable Bundle
+        run: |
+          bash scripts/build_standalone_bundle.sh
+
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          cat << 'EOF' > RELEASE_NOTES.md
+          ## AURA-CORE & AURA Studio (${{ github.ref_name }})
+
+          Tamamen açık kaynak (**GNU AGPLv3**) yerel otonom ajan mimarisi, süreç içi Rust HNSW vektör motoru ve Tauri 2.0 masaüstü geliştirme ortamı.
+
+          ### Öne Çıkan Yenilikler
+
+          - **%100 Açık Kaynak (GNU AGPLv3):** Tüm ticari/düğüm kilitli lisanslama katmanı kaldırıldı; tüm özellikler topluluğa tam açık hale getirildi.
+          - **AURA Studio Masaüstü Arayüzü:** Gerçek zamanlı SSE token akışı, nefes alan imleç, kronometreli düşünce süreci takibi, Spotlight hızlı erişim (`Alt + Space`) ve çalışma alanı bağlama.
+          - **Otonom ReAct Çekirdeği:**
+            - *Semantik Araç Budama (Semantic Tool Pruning)* ile dinamik araç seçimi.
+            - *Halüsinasyon ve Dosya Varlık Kalkanı (Disk Guard)* ile işlem öncesi fiziksel dosya doğrulaması.
+            - *Toleranslı Kod Yamalama (Fuzzy Diff Matching)* ile girintileme ve boşluk sapmalarına dayanıklı `apply_diff`.
+            - *Düşünce Adayı Değerlendirme (Tree-of-Thoughts)* ve `.auratrace.json` *Uçuş Kayıtçısı (Flight Recorder)*.
+          - **Çoklu-Ajan Sürüsü (Swarm):** Mimar, Kodlayıcı ve Denetçi ajan rolleri ile derleyici denetimli otomatik onarım ve geri alma döngüsü.
+          - **RAG 2.0 Hibrit Bellek:** Süreç içi Rust HNSW (`PyO3`) yoğun vektör grafı, Okapi BM25 seyrek indeks, Reciprocal Rank Fusion (RRF), AST çağrı grafı analizi, `.cursorrules` / `.aura/rules` proje kuralları tarayıcısı ve zamansal bellek sönümlemesi.
+          - **Çıkarım ve Donanım Güvenliği:** `LlamaRAMCache` (KV prefix caching), dinamik Bağlam Sıkıştırıcı (Context Compactor) ve Linux HAL CPU çekirdek sabitleme (`sched_setaffinity`).
+          - **Standart Entegrasyonlar:** Model Context Protocol (MCP) istemci köprüsü, OpenAI uyumlu REST API (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`), Hugging Face Model Marketi ve modüler Corten-Desktop Wayland profili.
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: |
+            dist/aura-linux-x86_64.tar.gz
+          draft: false
+          prerelease: false
+
