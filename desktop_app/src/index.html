@@ -22,7 +22,7 @@
       <span class="brand-version">v2.4</span>
     </div>
     <div class="titlebar-controls">
-      <span id="license-badge" style="font-size: 0.70rem; color: var(--accent-green); border: 1px solid rgba(52, 211, 153, 0.2); background: rgba(52, 211, 153, 0.05); padding: 2px 7px; border-radius: 4px; font-weight: 500; cursor: pointer;" title="Lisans Durumu">Aktif</span>
+      <span style="font-size: 0.70rem; color: var(--accent-green); border: 1px solid rgba(52, 211, 153, 0.2); background: rgba(52, 211, 153, 0.05); padding: 2px 7px; border-radius: 4px; font-weight: 500;" title="Çekirdek Durumu">Aktif</span>
       <select id="model-selector" class="model-pill-selector">
         <option value="qwen2.5-coder-7b">Qwen 2.5 Coder · 7B (8GB VRAM)</option>
         <option value="qwen2.5-coder-3b">Qwen 2.5 Coder · 3B (4GB VRAM)</option>
@@ -216,60 +216,7 @@
   </div>
 </div>
 
-<!-- 4. Commercial License Activation Modal -->
-<div id="license-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); z-index: 9999; align-items: center; justify-content: center;">
-  <div style="background: var(--bg-surface); border: 1px solid var(--border-elevated); border-radius: 8px; width: 440px; max-width: 90%; padding: 24px; color: var(--text-main);">
-    <h2 style="font-size: 1.05rem; font-weight: 600; margin-bottom: 6px;">Lisans Aktivasyonu</h2>
-    <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5;">
-      Bu kurulum donanıma kilitli ve şifrelenmiştir. Devam etmek için lisans anahtarınızı giriniz.
-    </p>
-
-    <!-- Hardware ID Box -->
-    <div style="background: #090a0d; border: 1px solid var(--border-hairline); border-radius: 6px; padding: 10px 12px; margin-bottom: 14px;">
-      <div style="font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px;">Donanım Kimliği (HW-ID)</div>
-      <div style="display: flex; align-items: center; justify-content: space-between;">
-        <span id="modal-hw-id" style="font-family: var(--font-code); font-size: 0.82rem; color: var(--accent-primary); font-weight: 500;">Tespit ediliyor...</span>
-        <button id="btn-copy-hw" style="background: var(--bg-surface-elevated); border: 1px solid var(--border-hairline); color: var(--text-main); font-size: 0.68rem; padding: 3px 6px; border-radius: 4px; cursor: pointer;">Kopyala</button>
-      </div>
-    </div>
-
-    <!-- License Input -->
-    <div style="margin-bottom: 16px;">
-      <label style="display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px;">Lisans Anahtarı</label>
-      <input type="text" id="license-input-key" placeholder="YEAR1-XXXX-XXXX-YYYYMMDD-ZZZZZZZZ" style="width: 100%; box-sizing: border-box; background: #090a0d; border: 1px solid var(--border-hairline); color: var(--text-main); padding: 8px 10px; font-family: var(--font-code); font-size: 0.80rem; border-radius: 6px; outline: none;" />
-      <div id="license-modal-msg" style="font-size: 0.74rem; margin-top: 5px; min-height: 16px;"></div>
-    </div>
-
-    <!-- EULA Agreement Checkbox -->
-    <div style="margin-bottom: 16px; display: flex; align-items: flex-start; gap: 8px;">
-      <input type="checkbox" id="chk-eula-agree" style="margin-top: 3px; accent-color: var(--accent-primary); cursor: pointer;" />
-      <label for="chk-eula-agree" style="font-size: 0.72rem; color: var(--text-muted); line-height: 1.4; cursor: pointer;">
-        <span id="btn-view-eula" style="color: var(--text-main); text-decoration: underline; cursor: pointer;">Son Kullanıcı Lisans Sözleşmesi'ni (EULA)</span> okudum ve kabul ediyorum.
-      </label>
-    </div>
-
-    <!-- Buttons -->
-    <button id="btn-activate-license" style="width: 100%; background: var(--text-main); color: #0c0d0f; font-weight: 600; padding: 10px; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer; transition: opacity 0.2s;">Lisansı Etkinleştir</button>
-  </div>
-</div>
-
-<!-- 5. EULA Full Text Viewer Modal -->
-<div id="eula-viewer-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px); z-index: 10000; align-items: center; justify-content: center;">
-  <div style="background: var(--bg-surface); border: 1px solid var(--border-elevated); border-radius: 8px; width: 620px; max-width: 90%; height: 75vh; display: flex; flex-direction: column; padding: 20px; color: var(--text-main);">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--border-hairline); padding-bottom: 10px;">
-      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 0;">Son Kullanıcı Lisans Sözleşmesi (EULA)</h3>
-      <button id="btn-close-eula" style="background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">✕</button>
-    </div>
-    <div id="eula-content-body" style="flex: 1; overflow-y: auto; font-size: 0.80rem; line-height: 1.6; color: var(--text-secondary); padding-right: 8px; white-space: pre-wrap; font-family: var(--font-ui);">
-Yükleniyor...
-    </div>
-    <div style="margin-top: 14px; text-align: right; border-top: 1px solid var(--border-hairline); padding-top: 10px;">
-      <button id="btn-accept-eula" style="background: var(--text-main); color: #0c0d0f; font-weight: 600; padding: 7px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.80rem;">Kabul Ediyorum</button>
-    </div>
-  </div>
-</div>
-
-<!-- 6. Hugging Face GGUF Model Hub Store Modal (Apple / Raycast Store Aesthetic) -->
+<!-- 4. Hugging Face GGUF Model Hub Store Modal (Apple / Raycast Store Aesthetic) -->
 <div id="model-hub-modal" style="display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); z-index: 9998; align-items: center; justify-content: center;">
   <div style="background: var(--bg-surface); border: 1px solid var(--border-elevated); border-radius: 8px; width: 720px; max-width: 94%; max-height: 84vh; display: flex; flex-direction: column; padding: 20px; color: var(--text-main);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--border-hairline); padding-bottom: 10px;">

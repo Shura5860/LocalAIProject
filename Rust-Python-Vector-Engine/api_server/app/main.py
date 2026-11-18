@@ -8,7 +8,6 @@ from api_server.app.api.v1.agent import router as agent_router
 from api_server.app.api.v1.memory import router as memory_router
 from api_server.app.api.v1.workspace import router as workspace_router
 from api_server.app.api.v1.models import router as models_router
-from api_server.app.api.v1.license import router as license_router
 from api_server.app.api.v1.openai_compat import router as openai_compat_router
 from api_server.app.core.config import init_database, save_database_and_checkpoint, db, DB_FILE
 
@@ -62,7 +61,6 @@ app.include_router(agent_router)
 app.include_router(memory_router)
 app.include_router(workspace_router)
 app.include_router(models_router)
-app.include_router(license_router)
 app.include_router(openai_compat_router)
 
 @app.get("/")

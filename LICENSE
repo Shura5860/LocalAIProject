@@ -1,25 +1,3 @@
-DUAL LICENSING STATEMENT
-
-AURA-CORE is dual-licensed under the GNU Affero General Public License v3.0 (AGPLv3)
-and a Commercial End-User License Agreement (EULA).
-
-1. OPEN-SOURCE USAGE (GNU AGPLv3)
-   If you are creating an open-source application under a license compatible with the
-   GNU AFFERO GENERAL PUBLIC LICENSE version 3 (AGPLv3), you may use this software
-   under the terms of the AGPLv3. Any derivative work, modification, or hosted service
-   incorporating this software must make its full source code available to all users
-   under the same license.
-
-2. COMMERCIAL / PROPRIETARY USAGE (Commercial EULA)
-   If you wish to use AURA-CORE in closed-source proprietary environments, distribute
-   compiled commercial packages, remove copyleft obligations, or utilize the
-   hardware-bound node-locked licensing module for commercial distribution, you must
-   acquire a commercial license from the author.
-   Contact: İbrahim Kalaycı (https://github.com/Shura5860)
-   Commercial Terms: See ./desktop_app/src/EULA.md
-
-================================================================================
-
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 

@@ -9,7 +9,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-Framework-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-24C8D8?logo=tauri&logoColor=white)](https://tauri.app/)
-[![License: AGPL v3 / Commercial](https://img.shields.io/badge/License-AGPL%20v3%20%2F%20Commercial-blue.svg)](./LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](./LICENSE)
 
 [Türkçe Dokümantasyon](#türkçe-dokümantasyon) • [English Documentation](#english-documentation)
 
@@ -138,7 +138,7 @@ Sistem iki ana bileşenden meydana gelir:
 │   ├── vector_engine/         # Rust HNSW vektör motoru kaynak kodu
 │   └── tests/                 # Kapsamlı test paketleri
 ├── scripts/                   # Kurulum ve isteğe bağlı paketleme betikleri
-├── LICENSE                    # AGPLv3 ve Ticari Lisans metni
+├── LICENSE                    # GNU AGPLv3 Açık Kaynak Lisans metni
 └── start_assistant.sh         # Başlatma betiği
 ```
 
@@ -283,5 +283,5 @@ cd ..
 ---
 
 <div align="center">
-<sub>AURA: Local Agentic AI & In-Process Vector Engine. Dual licensed under AGPLv3 and Commercial EULA.</sub>
+<sub>AURA: Local Agentic AI & In-Process Vector Engine. Open source under GNU AGPLv3.</sub>
 </div>
