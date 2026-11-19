@@ -23,9 +23,10 @@ def allocate_doc_ids(count: int = 1) -> List[int]:
     """
     global _next_doc_id
     with _id_lock:
-        current_len = db.len()
-        if _next_doc_id < current_len:
-            _next_doc_id = current_len
+        max_existing = db.max_id() if hasattr(db, "max_id") else None
+        min_next = (max_existing + 1) if max_existing is not None else db.len()
+        if _next_doc_id < min_next:
+            _next_doc_id = min_next
         allocated = list(range(_next_doc_id, _next_doc_id + count))
         _next_doc_id += count
         return allocated
@@ -35,7 +36,9 @@ def init_database():
     global _next_doc_id
     if os.path.exists(DB_FILE):
         db.load_from_disk(DB_FILE)
-        _next_doc_id = max(_next_doc_id, db.len())
+        max_existing = db.max_id() if hasattr(db, "max_id") else None
+        min_next = (max_existing + 1) if max_existing is not None else db.len()
+        _next_doc_id = max(_next_doc_id, min_next)
         print(f"✅ İndeks Yüklendi! Aktif Doküman Sayısı: {db.len()}")
     else:
         print("ℹ️ Henüz kaydedilmiş veritabanı bulunamadı, sıfır indeks ile başlandı.")

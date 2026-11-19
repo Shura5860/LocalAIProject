@@ -28,6 +28,12 @@ class RustLLMBridge:
             return os.path.join(base_dir, "Rust-LLM-Engine/model.gguf")
 
     def is_available(self) -> bool:
+        try:
+            from api_server.app.services.inference_engine import production_engine
+            if production_engine.is_available():
+                return True
+        except Exception:
+            pass
         return os.path.exists(self.binary_path) and os.path.exists(self.model_path)
 
 
@@ -68,26 +74,6 @@ class RustLLMBridge:
                 f"Model veya binary henüz derlenmedi. Sistem RAG ve Ajan simülasyon modunda hazır!"
             )
 
-    def generate_stream(self, prompt: str, max_tokens: int = 256):
-        """Token token canlı akış (Streaming) köprüsü."""
-        if os.environ.get("TESTING", "0") == "1" or os.environ.get("MOCK_LLM", "0") == "1":
-            for word in ["Test", " modunda", " canlı", " yanıt", " akıtılıyor."]:
-                yield word + " "
-            return
-
-        try:
-            from api_server.app.services.inference_engine import production_engine
-            if production_engine.is_available():
-                for token in production_engine.generate_stream(prompt=prompt, max_tokens=max_tokens):
-                    yield token
-                return
-        except Exception as e:
-            logger.warning(f"Production engine stream çağrısı başarısız: {e}")
-
-        # Binary fallback (single batch)
-        full_text = self.generate(prompt=prompt, max_tokens=max_tokens)
-        yield full_text
-
         cmd = [
             self.binary_path,
             "--cli",
@@ -110,3 +96,24 @@ class RustLLMBridge:
             raise RuntimeError(f"Rust LLM çıkarım hatası: {e.stderr}")
         except subprocess.TimeoutExpired:
             raise TimeoutError("Rust LLM çıkarımı zaman aşımına uğradı.")
+
+    def generate_stream(self, prompt: str, max_tokens: int = 256):
+        """Token token canlı akış (Streaming) köprüsü."""
+        if os.environ.get("TESTING", "0") == "1" or os.environ.get("MOCK_LLM", "0") == "1":
+            for word in ["Test", " modunda", " canlı", " yanıt", " akıtılıyor."]:
+                yield word + " "
+            return
+
+        try:
+            from api_server.app.services.inference_engine import production_engine
+            if production_engine.is_available():
+                for token in production_engine.generate_stream(prompt=prompt, max_tokens=max_tokens):
+                    yield token
+                return
+        except Exception as e:
+            logger.warning(f"Production engine stream çağrısı başarısız: {e}")
+
+        # Binary fallback (single batch)
+        full_text = self.generate(prompt=prompt, max_tokens=max_tokens)
+        if full_text:
+            yield full_text

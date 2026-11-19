@@ -42,10 +42,15 @@ def search_vectors(req: SearchRequest):
 
 @router.delete("/{vector_id}")
 def delete_vector(vector_id: int):
-    """Soft-delete (Tombstone) ile vektör siler."""
+    """Soft-delete (Tombstone) ile vektör siler ve BM25 seyrek indeksini senkronize eder."""
     success = db.delete_id(vector_id)
     if not success:
         raise HTTPException(status_code=404, detail="ID bulunamadı veya zaten silinmiş.")
+    try:
+        from api_server.app.services.rag_service import rag_service
+        rag_service.remove_from_sparse_index(vector_id)
+    except Exception:
+        pass
     return {"message": f"ID {vector_id} başarıyla silindi."}
 
 @router.put("/{vector_id}")

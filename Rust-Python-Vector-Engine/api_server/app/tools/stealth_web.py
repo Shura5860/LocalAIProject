@@ -11,14 +11,54 @@ DOCUMENTATION_FETCH_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,tr;q=0.8",
 }
 
+import ipaddress
+import socket
+from urllib.parse import urlparse
+
+
+def _validate_public_http_url(url: str) -> None:
+    """SSRF koruması: loopback, özel ağ, link-local ve bulut metadata adreslerini engeller."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Desteklenmeyen URL şeması: {parsed.scheme}")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Geçersiz URL: ana makine adı eksik.")
+    if host.lower() in ("localhost", "localhost.localdomain"):
+        raise ValueError("Güvenlik Kalkanı (SSRF): Yerel ağ adreslerine erişim engellendi.")
+    try:
+        infos = socket.getaddrinfo(host, None)
+        for info in infos:
+            ip_obj = ipaddress.ip_address(info[4][0])
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_multicast
+                or ip_obj.is_reserved
+                or ip_obj.is_unspecified
+            ):
+                raise ValueError(f"Güvenlik Kalkanı (SSRF): Özel/yerel IP adresi ({ip_obj}) engellendi.")
+    except ValueError:
+        raise
+    except Exception:
+        # DNS çözülemiyorsa httpx kendi bağlantı hatasını verecektir
+        pass
+
+
 def fetch_web_content(url: str, max_chars: int = 4000) -> str:
     """
     Belirtilen web sayfasının içeriğini tamamen doğrudan yerel HTTP istemcisiyle çeker.
     Üçüncü taraf aracı veya bulut gateway kullanılmaz; tüm ağ iletişimi yerel makineden hedefe doğrudur.
     """
+    try:
+        _validate_public_http_url(url)
+    except ValueError as ve:
+        return str(ve)
+
     client_kwargs = {
         "timeout": 15.0,
-        "follow_redirects": True,
+        "follow_redirects": False,
         "headers": DOCUMENTATION_FETCH_HEADERS
     }
     try:
@@ -29,8 +69,16 @@ def fetch_web_content(url: str, max_chars: int = 4000) -> str:
 
     try:
         with httpx.Client(**client_kwargs) as client:
-            resp = client.get(url)
-            if resp.status_code == 200:
+            current_url = url
+            resp = None
+            for _ in range(5):
+                _validate_public_http_url(current_url)
+                resp = client.get(current_url)
+                if resp.status_code in (301, 302, 303, 307, 308) and resp.headers.get("location"):
+                    current_url = str(resp.url.join(resp.headers["location"]))
+                    continue
+                break
+            if resp is not None and resp.status_code == 200:
                 text = resp.text
                 # Script ve style etiketlerini temizle
                 clean = re.sub(r"<script.*?</script>", "", text, flags=re.DOTALL)

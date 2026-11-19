@@ -13,7 +13,8 @@ class Tool:
         params = {}
         type_hints = get_type_hints(self.fn)
         for name, param in self.signature.parameters.items():
-            param_type = type_hints.get(name, str).__name__
+            raw_hint = type_hints.get(name, str)
+            param_type = getattr(raw_hint, "__name__", None) or str(raw_hint)
             default = param.default if param.default != inspect.Parameter.empty else None
             params[name] = {
                 "type": param_type,

@@ -69,7 +69,8 @@ class ModelService:
                 capture_output=True, text=True, timeout=2
             )
             if res.returncode == 0 and res.stdout.strip():
-                parts = [p.strip() for p in res.stdout.strip().split(",")]
+                first_line = res.stdout.strip().splitlines()[0]
+                parts = [p.strip() for p in first_line.split(",")]
                 if len(parts) >= 3:
                     vram_info = {
                         "has_gpu": True,

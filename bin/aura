@@ -12,7 +12,7 @@ Provides one-command developer ergonomics matching Ollama, Aider & LM Studio:
 import sys
 import os
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 VENV_PYTHON = os.path.join(PROJECT_ROOT, ".venv", "bin", "python")
 
 # Auto-reexec with local venv python if available
@@ -69,7 +69,11 @@ def cmd_serve(args):
     print(f"{DIM}Adres: http://{host}:{port}{RESET}")
     print(f"{DIM}OpenAI Uyumlu Uç Nokta: http://{host}:{port}/v1{RESET}\n")
 
-    sys.path.insert(0, os.path.join(PROJECT_ROOT, "Rust-Python-Vector-Engine"))
+    if os.environ.get("AURA_PORTABLE_MODE") == "1":
+        engine_dir = os.path.join(PROJECT_ROOT, "internal", "Rust-Python-Vector-Engine")
+    else:
+        engine_dir = os.path.join(PROJECT_ROOT, "Rust-Python-Vector-Engine")
+    sys.path.insert(0, engine_dir)
     import uvicorn
     uvicorn.run("api_server.app.main:app", host=host, port=port, reload=args.reload)
 
@@ -93,8 +97,8 @@ def cmd_status(args):
             print(f"\n{BOLD}══ Donanım & Çıkarım Kaynakları ══{RESET}")
             print(f"RAM:        {hw.get('ram', {}).get('available_gb', '?')} GB Boş / {hw.get('ram', {}).get('total_gb', '?')} GB Toplam")
             gpu = hw.get("gpu", {})
-            gpu_name = gpu.get("name", "Bilinmiyor")
-            gpu_vram = gpu.get("vram_free_gb", 0.0)
+            gpu_name = gpu.get("gpu_name") or gpu.get("name") or "Bilinmiyor"
+            gpu_vram = gpu.get("free_vram_gb", gpu.get("vram_free_gb", 0.0))
             print(f"GPU:        {gpu_name} (Boş VRAM: {gpu_vram} GB)")
             print(f"Önerilen:   {CYAN}{hw.get('recommended_model_id', 'Bilinmiyor')}{RESET}")
 
@@ -220,6 +224,9 @@ def cmd_swarm(args):
 def cmd_models(args):
     """Model katalog, arama ve indirme alt komutları."""
     sub = args.models_action
+    if not sub:
+        print(f"{YELLOW}Kullanım: aura models <list|search|pull>{RESET}")
+        return
 
     if not check_server_online():
         print(f"{RED}Hata: Sunucu çevrimdışı!{RESET} Önce {BOLD}aura serve{RESET} başlatın.")
@@ -237,9 +244,17 @@ def cmd_models(args):
             print()
 
         elif sub == "search":
+            from urllib.parse import quote
             query = args.query or "qwen"
             print(f"🔍 HuggingFace Hub taranıyor: '{query}'...")
-            res = client.get(f"{API_BASE}/models/hub/search?query={query}").json()
+            resp = client.get(f"{API_BASE}/models/hub/search?query={quote(query)}")
+            if resp.status_code != 200:
+                print(f"{RED}Arama hatası (HTTP {resp.status_code}): {resp.text}{RESET}")
+                return
+            res = resp.json()
+            if not isinstance(res, list):
+                print(f"{RED}Beklenmeyen yanıt formatı.{RESET}")
+                return
             print(f"\n{BOLD}═════════════════ HUGGING FACE GGUF ARAMA SONUÇLARI ═════════════════{RESET}")
             for item in res:
                 rec = item.get("recommended_quant", "q4_k_m.gguf")

@@ -6,6 +6,7 @@ class PendingAction(BaseModel):
     tool: str
     args: Dict[str, Any]
     description: str
+    diff_preview: Optional[Dict[str, Any]] = None
 
 class ReActChatRequest(BaseModel):
     query: str
@@ -36,6 +37,17 @@ class ActionDecisionResponse(BaseModel):
     action_id: str
     status: str  # "EXECUTED" veya "CANCELLED"
     result: Any
+    message: str
+    snapshot_id: Optional[str] = None
+    diff_preview: Optional[Dict[str, Any]] = None
+
+class UndoChangeRequest(BaseModel):
+    snapshot_id: str
+
+class UndoChangeResponse(BaseModel):
+    status: str
+    snapshot_id: str
+    restored_files: List[str]
     message: str
 
 class SwarmRequest(BaseModel):

@@ -107,26 +107,33 @@ class WorkspaceService:
         valid_exts = {".rs", ".py", ".toml", ".json", ".md", ".js", ".html", ".css", ".sh"}
 
         indexed_files = []
+        documents = []
+        metadatas = []
         for dirpath, dirnames, filenames in os.walk(root_dir):
             # Filtrele
-            dirnames[:] = [d for d in dirnames if d not in [".git", ".venv", "target", "node_modules", "__pycache__"]]
+            dirnames[:] = [d for d in dirnames if d not in [".git", ".venv", "target", "node_modules", "__pycache__", "dist", "build"]]
             for f in filenames:
                 ext = os.path.splitext(f)[1].lower()
                 if ext in valid_exts:
                     full_p = os.path.join(dirpath, f)
                     try:
                         with open(full_p, "r", encoding="utf-8", errors="replace") as file_obj:
-                            content = file_obj.read(8000) # İlk 8000 karakter
+                            content = file_obj.read(8000)  # İlk 8000 karakter
                             if len(content.strip()) > 20:
                                 rel_p = os.path.relpath(full_p, root_dir)
                                 doc_text = f"[DOSYA: {rel_p}]\n{content}"
-                                rag_service.ingest_document(
-                                    content=doc_text,
-                                    category="project_code"
-                                )
+                                documents.append(doc_text)
+                                metadatas.append({
+                                    "source": rel_p,
+                                    "category": "project_code",
+                                    "project": os.path.basename(root_dir),
+                                })
                                 indexed_files.append(rel_p)
                     except Exception:
                         pass
+
+        if documents:
+            rag_service.ingest_documents(documents=documents, metadatas=metadatas)
 
         return {
             "status": "success",

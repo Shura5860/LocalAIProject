@@ -541,7 +541,6 @@ dependencies = [
  "instant-distance",
  "numpy",
  "pyo3",
- "rayon",
  "serde",
  "serde_json",
 ]

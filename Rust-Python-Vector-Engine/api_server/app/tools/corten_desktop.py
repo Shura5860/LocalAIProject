@@ -83,8 +83,12 @@ def corten_take_screenshot(mode: str = "fullscreen") -> str:
         if "corten-snipper" in snipper_bin:
             cmd = [snipper_bin, "--fullscreen"] if mode == "fullscreen" else [snipper_bin]
         else:
-            # Fallback to grim
-            cmd = [snipper_bin] if mode == "fullscreen" else ["slurp", "|", snipper_bin]
+            # Fallback to grim (selection uses slurp geometry)
+            if mode == "fullscreen":
+                subprocess.Popen([snipper_bin])
+            else:
+                subprocess.Popen(["bash", "-c", f'{snipper_bin} -g "$(slurp)"'])
+            return f"Ekran görüntüsü alma aracı tetiklendi ({mode})."
         subprocess.Popen(cmd)
         return f"Ekran görüntüsü alma aracı tetiklendi ({mode})."
     except Exception as e:

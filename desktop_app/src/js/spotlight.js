@@ -42,14 +42,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  const esc = (s) => (typeof escapeHtml === "function" ? escapeHtml(s) : String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"));
+  let inFlight = false;
+
   // Spotlight Komut Gönderimi (Enter)
   input.addEventListener("keydown", async (e) => {
     if (e.key === "Enter") {
+      if (inFlight) return;
       const q = input.value.trim();
       if (!q) return;
 
+      inFlight = true;
       terminal.classList.add("visible");
-      terminal.innerHTML = `<span style="color:var(--accent-purple);">⚡ [Komut Yürütülüyor]:</span> ${q}\n<span style="color:var(--text-dim);">Lütfen bekleyin...</span>`;
+      terminal.innerHTML = `<span style="color:var(--accent-purple);">⚡ [Komut Yürütülüyor]:</span> ${esc(q)}\n<span style="color:var(--text-dim);">Lütfen bekleyin...</span>`;
 
       try {
         const chk = document.getElementById("chk-human-approval");
@@ -62,20 +67,29 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (res.ok) {
           const data = await res.json();
-          let out = `\n<span style="color:var(--accent-cyan);">=== ÇIKTI / SONUÇ ===</span>\n${data.final_answer}\n`;
+          let out = `<span style="color:var(--accent-cyan);">=== ÇIKTI / SONUÇ ===</span>\n${esc(data.final_answer)}\n`;
           if (data.status === "WAITING_APPROVAL" && data.pending_action) {
-            out += `\n<span style="color:var(--accent-amber);">🛡️ [İNSAN ONAYI GEREKLİ]: '${data.pending_action.tool}' aracı ana ekranda onayınızı bekliyor.</span>\n`;
+            out += `\n<span style="color:var(--accent-amber);">🛡️ [İNSAN ONAYI GEREKLİ]: '${esc(data.pending_action.tool)}' aracı ana ekranda onay kartı olarak açıldı.</span>\n`;
+            if (typeof window.auraAppendApprovalCard === "function") {
+              window.auraAppendApprovalCard(data.pending_action);
+            }
           }
           if (data.trace && data.trace.length > 0) {
-            out += `\n<span style="color:var(--text-dim);">[İşlenen Adımlar: ${data.total_steps}]</span>`;
+            out += `\n<span style="color:var(--text-dim);">[İşlenen Adımlar: ${esc(data.total_steps)}]</span>`;
           }
           terminal.innerHTML = out;
         } else {
-          const err = await res.json();
-          terminal.innerHTML = `<span style="color:var(--accent-red);">Hata: ${err.detail || 'Sunucu hatası'}</span>`;
+          let errMsg = `HTTP ${res.status}`;
+          try {
+            const err = await res.json();
+            errMsg = err.detail || errMsg;
+          } catch (_) {}
+          terminal.innerHTML = `<span style="color:var(--accent-red);">Hata: ${esc(errMsg)}</span>`;
         }
       } catch (err) {
-        terminal.innerHTML = `<span style="color:var(--accent-red);">Bağlantı hatası: ${err.message}</span>`;
+        terminal.innerHTML = `<span style="color:var(--accent-red);">Bağlantı hatası: ${esc(err.message)}</span>`;
+      } finally {
+        inFlight = false;
       }
     }
   });

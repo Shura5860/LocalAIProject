@@ -46,8 +46,13 @@ class EmbeddingRequest(BaseModel):
 @router.post("/models/pull")
 def pull_model_v1(req: Dict[str, Any]):
     """OpenAI tarzı /v1/models/pull SSE canlı indirme köprüsü."""
+    from pydantic import ValidationError
     from api_server.app.api.v1.models import pull_model, PullModelRequest
-    return pull_model(PullModelRequest(**req))
+    try:
+        parsed = PullModelRequest(**req)
+    except ValidationError as ve:
+        raise HTTPException(status_code=422, detail=ve.errors())
+    return pull_model(parsed)
 
 @router.get("/models")
 def list_openai_models():
@@ -65,7 +70,7 @@ def list_openai_models():
             "permission": [],
             "root": m["id"],
             "parent": None,
-            "active": m.get("active", False)
+            "active": m.get("is_active", m.get("active", False))
         })
 
     return {
@@ -128,7 +133,7 @@ def create_chat_completion(req: ChatCompletionRequest):
             stream_gen = production_engine.generate_stream(
                 prompt=prompt,
                 max_tokens=req.max_tokens or 512,
-                temperature=req.temperature or 0.7
+                temperature=req.temperature if req.temperature is not None else 0.7
             )
 
             for token in stream_gen:
@@ -202,9 +207,8 @@ def create_embeddings(req: EmbeddingRequest):
         embeddings = [np.full(384, 0.05, dtype=float).tolist() for _ in texts]
     else:
         try:
-            from sentence_transformers import SentenceTransformer
-            model = SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-            embeddings = model.encode(texts, convert_to_numpy=True).tolist()
+            from api_server.app.services.rag_service import rag_service
+            embeddings = rag_service.embedder.encode(texts, convert_to_numpy=True).tolist()
         except Exception:
             import numpy as np
             embeddings = [np.zeros(384, dtype=float).tolist() for _ in texts]

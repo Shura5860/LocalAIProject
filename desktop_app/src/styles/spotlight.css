@@ -95,6 +95,10 @@
   line-height: 1.5;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .spotlight-terminal-output.visible {

@@ -47,6 +47,13 @@ cp -r "$PROJECT_ROOT/Rust-Python-Vector-Engine" "$DIST_DIR/internal/"
 rm -rf "$DIST_DIR/internal/Rust-Python-Vector-Engine/tests"
 rm -rf "$DIST_DIR/internal/Rust-Python-Vector-Engine/vector_engine/target"
 
+# Derlenmiş yerel Rust vector_engine*.so uzantısını pakete dahil et
+SO_PATH="$(python3 -c 'import vector_engine; print(vector_engine.__file__)' 2>/dev/null || "$PROJECT_ROOT/.venv/bin/python" -c 'import vector_engine; print(vector_engine.__file__)' 2>/dev/null || true)"
+if [ -n "$SO_PATH" ] && [ -f "$SO_PATH" ]; then
+    cp "$SO_PATH" "$DIST_DIR/internal/Rust-Python-Vector-Engine/"
+    echo -e "   ${GREEN}✓ Derlenmiş Rust uzantısı pakete eklendi: $(basename "$SO_PATH")${RESET}"
+fi
+
 # Web Arayüzünü kopyala
 if [ -d "$PROJECT_ROOT/desktop_app/src" ]; then
     cp -r "$PROJECT_ROOT/desktop_app/src"/* "$DIST_DIR/web/"

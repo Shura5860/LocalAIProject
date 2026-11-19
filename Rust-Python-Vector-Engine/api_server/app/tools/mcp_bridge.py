@@ -4,6 +4,7 @@ Allows AURA to connect to external MCP servers (stdio JSON-RPC 2.0),
 discover their tools dynamically, and register them into ToolRegistry.
 """
 
+import os
 import json
 import logging
 import subprocess
@@ -84,12 +85,14 @@ class MCPBridge:
             }
         }
 
+        proc_env = {**os.environ, **(server.get("env") or {})}
         try:
             proc = subprocess.run(
                 cmd,
                 input=json.dumps(request_payload) + "\n",
                 capture_output=True,
                 text=True,
+                env=proc_env,
                 timeout=10
             )
             if proc.returncode != 0 and not proc.stdout:
@@ -127,10 +130,12 @@ class MCPBridge:
             return []
 
         # JSON-RPC tools/list
+        import os
         cmd = [server["command"]] + server["args"]
+        proc_env = {**os.environ, **(server.get("env") or {})}
         req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         try:
-            proc = subprocess.run(cmd, input=json.dumps(req) + "\n", capture_output=True, text=True, timeout=5)
+            proc = subprocess.run(cmd, input=json.dumps(req) + "\n", capture_output=True, text=True, env=proc_env, timeout=5)
             for line in proc.stdout.splitlines():
                 try:
                     resp = json.loads(line)

@@ -325,7 +325,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  scroll-behavior: smooth;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Centered Reading Column (Max 820px, high reading comfort) */

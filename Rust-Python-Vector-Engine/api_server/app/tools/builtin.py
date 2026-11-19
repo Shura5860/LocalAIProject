@@ -1,21 +1,79 @@
 import sys
 import io
+import ast
 import math
+import operator
+import threading
 import psutil
 from typing import Dict, Any, List
 from duckduckgo_search import DDGS
 from api_server.app.tools.base import tool
+
+_STDOUT_LOCK = threading.Lock()
+
+_SAFE_BIN_OPS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+}
+_SAFE_UNARY_OPS = {
+    ast.UAdd: operator.pos,
+    ast.USub: operator.neg,
+}
+_SAFE_MATH_FUNCS = {
+    "sqrt": math.sqrt, "sin": math.sin, "cos": math.cos, "tan": math.tan,
+    "log": math.log, "log10": math.log10, "exp": math.exp, "floor": math.floor,
+    "ceil": math.ceil, "fabs": math.fabs, "abs": abs, "round": round,
+    "min": min, "max": max, "sum": sum,
+}
+_SAFE_CONSTS = {"pi": math.pi, "e": math.e, "tau": math.tau}
+
+
+def _safe_eval_ast(node: ast.AST) -> Any:
+    if isinstance(node, ast.Expression):
+        return _safe_eval_ast(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in _SAFE_CONSTS:
+        return _SAFE_CONSTS[node.id]
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_UNARY_OPS:
+        return _SAFE_UNARY_OPS[type(node.op)](_safe_eval_ast(node.operand))
+    if isinstance(node, ast.BinOp):
+        left = _safe_eval_ast(node.left)
+        right = _safe_eval_ast(node.right)
+        if isinstance(node.op, ast.Pow):
+            if abs(right) > 1000:
+                raise ValueError("Üs değeri güvenlik sınırını (1000) aşıyor.")
+            return operator.pow(left, right)
+        if type(node.op) in _SAFE_BIN_OPS:
+            return _SAFE_BIN_OPS[type(node.op)](left, right)
+    if isinstance(node, ast.Call):
+        func_name = None
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id == "math":
+            func_name = node.func.attr
+        if func_name in _SAFE_MATH_FUNCS:
+            args = [_safe_eval_ast(a) for a in node.args]
+            return _SAFE_MATH_FUNCS[func_name](*args)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_safe_eval_ast(elt) for elt in node.elts]
+    raise ValueError(f"İzin verilmeyen ifade öğesi: {type(node).__name__}")
+
 
 @tool(
     name="calculator",
     description="Matematiksel ifadeleri ve hesaplamaları güvenle çözer. Örn: '125 * 34' veya 'math.sqrt(144) + 10'."
 )
 def calculator(expression: str) -> str:
-    allowed_names = {k: v for k, v in math.__dict__.items() if not k.startswith("__")}
-    allowed_names.update({"abs": abs, "round": round, "min": min, "max": max, "sum": sum, "pow": pow})
+    if not expression or len(expression) > 500:
+        return "Hesaplama hatası: İfade boş veya çok uzun."
     try:
-        # Güvenli eval
-        result = eval(expression, {"__builtins__": None}, allowed_names)
+        tree = ast.parse(expression.strip(), mode="eval")
+        result = _safe_eval_ast(tree)
         return str(result)
     except Exception as e:
         return f"Hesaplama hatası: {str(e)}"
@@ -78,18 +136,19 @@ def web_search(query: str, max_results: int = 3) -> List[Dict[str, str]]:
     description="Küçük Python kod bloklarını çalıştırıp stdout çıktısını veya dönen sonucu alır. Veri analizi veya algoritma hesaplama için idealdir."
 )
 def python_interpreter(code: str) -> str:
-    old_stdout = sys.stdout
     redirected_output = io.StringIO()
-    sys.stdout = redirected_output
     local_vars = {}
-    try:
-        exec(code, {}, local_vars)
-        sys.stdout = old_stdout
-        out = redirected_output.getvalue().strip()
-        if not out and local_vars:
-            last_key = list(local_vars.keys())[-1]
-            out = f"{last_key} = {local_vars[last_key]}"
-        return out if out else "Kod başarıyla çalıştı (Çıktı yok)."
-    except Exception as e:
-        sys.stdout = old_stdout
-        return f"Python çalıştırma hatası: {str(e)}"
+    with _STDOUT_LOCK:
+        old_stdout = sys.stdout
+        sys.stdout = redirected_output
+        try:
+            exec(code, {}, local_vars)
+            out = redirected_output.getvalue().strip()
+            if not out and local_vars:
+                last_key = list(local_vars.keys())[-1]
+                out = f"{last_key} = {local_vars[last_key]}"
+            return out if out else "Kod başarıyla çalıştı (Çıktı yok)."
+        except Exception as e:
+            return f"Python çalıştırma hatası: {str(e)}"
+        finally:
+            sys.stdout = old_stdout

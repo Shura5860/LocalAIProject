@@ -1,12 +1,13 @@
 use instant_distance::{Builder, HnswMap, Search};
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::exceptions::{PyIOError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::storage::wal::{append_wal, WalEntry};
 use crate::types::{normalize_vector, VectorPoint};
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::{Arc, RwLock};
 
@@ -18,6 +19,73 @@ pub struct InnerState {
     pub inverted_index: HashMap<String, HashMap<String, HashSet<usize>>>,
     pub tombstone_ids: HashSet<usize>,
     pub hnsw_index: Option<HnswMap<VectorPoint, usize>>,
+}
+
+impl InnerState {
+    fn remove_metadata_from_inverted(&mut self, id: usize) {
+        if let Some(old_meta) = self.metadata_store.remove(&id) {
+            for (k, v) in old_meta {
+                let mut remove_val_key = false;
+                if let Some(val_map) = self.inverted_index.get_mut(&k) {
+                    if let Some(id_set) = val_map.get_mut(&v) {
+                        id_set.remove(&id);
+                        if id_set.is_empty() {
+                            remove_val_key = true;
+                        }
+                    }
+                    if remove_val_key {
+                        val_map.remove(&v);
+                    }
+                }
+                if self
+                    .inverted_index
+                    .get(&k)
+                    .map(|m| m.is_empty())
+                    .unwrap_or(false)
+                {
+                    self.inverted_index.remove(&k);
+                }
+            }
+        }
+    }
+
+    fn upsert_vector(&mut self, id: usize, normalized_vec: Vec<f32>, meta: HashMap<String, String>) {
+        // Remove any previous vector/metadata for the same ID to prevent duplicates or resurrection
+        self.remove_metadata_from_inverted(id);
+        if let Some(pos) = self.ids.iter().position(|&existing| existing == id) {
+            self.raw_vectors[pos] = VectorPoint(normalized_vec);
+        } else {
+            self.raw_vectors.push(VectorPoint(normalized_vec));
+            self.ids.push(id);
+        }
+        self.metadata_store.insert(id, meta.clone());
+        for (k, v) in &meta {
+            self.inverted_index
+                .entry(k.clone())
+                .or_insert_with(HashMap::new)
+                .entry(v.clone())
+                .or_insert_with(HashSet::new)
+                .insert(id);
+        }
+        self.tombstone_ids.remove(&id);
+    }
+
+    fn rebuild_hnsw_live(&mut self) {
+        let mut live_vecs = Vec::with_capacity(self.raw_vectors.len());
+        let mut live_ids = Vec::with_capacity(self.ids.len());
+        for (vec, &id) in self.raw_vectors.iter().zip(self.ids.iter()) {
+            if !self.tombstone_ids.contains(&id) {
+                live_vecs.push(vec.clone());
+                live_ids.push(id);
+            }
+        }
+        if live_vecs.is_empty() {
+            self.hnsw_index = None;
+        } else {
+            let hnsw = Builder::default().build(live_vecs, live_ids);
+            self.hnsw_index = Some(hnsw);
+        }
+    }
 }
 
 #[pyclass]
@@ -37,7 +105,10 @@ impl VectorIndex {
     }
 
     pub fn enable_wal(&self, path: String) -> PyResult<()> {
-        let mut wal_lock = self.wal_path.write().unwrap();
+        let mut wal_lock = self
+            .wal_path
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("WAL lock poisoned"))?;
         *wal_lock = Some(path);
         Ok(())
     }
@@ -49,112 +120,119 @@ impl VectorIndex {
         metadatas: Vec<HashMap<String, String>>,
     ) -> PyResult<()> {
         let array_view = vectors_array.as_array();
-        let mut state = self.state.write().unwrap();
-        let wal_lock = self.wal_path.read().unwrap();
+        if ids.len() != array_view.nrows() {
+            return Err(PyValueError::new_err(format!(
+                "ID sayısı ({}) ile vektör satır sayısı ({}) eşleşmiyor!",
+                ids.len(),
+                array_view.nrows()
+            )));
+        }
+
+        // Consistent lock order: state FIRST, then wal_path
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
+        let wal_lock = self
+            .wal_path
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("WAL lock poisoned"))?;
 
         for (i, &id) in ids.iter().enumerate() {
-            if let Some(row) = array_view.row(i).as_slice() {
-                let normalized_vec = normalize_vector(row);
-                let meta = metadatas.get(i).cloned().unwrap_or_default();
+            let row_view = array_view.row(i);
+            let normalized_vec = if let Some(slice) = row_view.as_slice() {
+                normalize_vector(slice)
+            } else {
+                let owned: Vec<f32> = row_view.iter().copied().collect();
+                normalize_vector(&owned)
+            };
+            let meta = metadatas.get(i).cloned().unwrap_or_default();
 
-                append_wal(
-                    &wal_lock,
-                    &WalEntry::Insert {
-                        id,
-                        vector: normalized_vec.clone(),
-                        metadata: meta.clone(),
-                    },
-                );
+            append_wal(
+                &wal_lock,
+                &WalEntry::Insert {
+                    id,
+                    vector: normalized_vec.clone(),
+                    metadata: meta.clone(),
+                },
+            );
 
-                state.raw_vectors.push(VectorPoint(normalized_vec));
-                state.ids.push(id);
-                state.metadata_store.insert(id, meta.clone());
-
-                for (k, v) in &meta {
-                    state
-                        .inverted_index
-                        .entry(k.clone())
-                        .or_insert_with(HashMap::new)
-                        .entry(v.clone())
-                        .or_insert_with(HashSet::new)
-                        .insert(id);
-                }
-
-                state.tombstone_ids.remove(&id);
-            }
+            state.upsert_vector(id, normalized_vec, meta);
         }
         Ok(())
     }
 
     pub fn build_hnsw_index(&self) -> PyResult<()> {
-        let mut state = self.state.write().unwrap();
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
 
-        if state.raw_vectors.is_empty() {
-            return Err(pyo3::exceptions::PyValueError::new_err("İndekslenecek veri yok!"));
+        let live_count = state
+            .ids
+            .iter()
+            .filter(|id| !state.tombstone_ids.contains(id))
+            .count();
+        if live_count == 0 {
+            return Err(PyValueError::new_err("İndekslenecek veri yok!"));
         }
 
-        let hnsw = Builder::default().build(state.raw_vectors.clone(), state.ids.clone());
-        state.hnsw_index = Some(hnsw);
-
+        state.rebuild_hnsw_live();
         Ok(())
     }
 
     pub fn vacuum(&self) -> PyResult<usize> {
-        let mut state = self.state.write().unwrap();
-        let tombstones = state.tombstone_ids.clone();
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
 
-        if tombstones.is_empty() {
+        if state.tombstone_ids.is_empty() {
             return Ok(0);
         }
 
-        let mut new_raw_vectors = Vec::new();
-        let mut new_ids = Vec::new();
+        let tombstones = state.tombstone_ids.clone();
+        let mut new_raw_vectors = Vec::with_capacity(state.raw_vectors.len());
+        let mut new_ids = Vec::with_capacity(state.ids.len());
+        let mut purged_count = 0usize;
 
         for (vec, &id) in state.raw_vectors.iter().zip(state.ids.iter()) {
             if !tombstones.contains(&id) {
                 new_raw_vectors.push(vec.clone());
                 new_ids.push(id);
+            } else {
+                purged_count += 1;
             }
         }
-
-        let purged_count = tombstones.len();
 
         state.raw_vectors = new_raw_vectors;
         state.ids = new_ids;
         state.tombstone_ids.clear();
-
-        if !state.raw_vectors.is_empty() {
-            let hnsw = Builder::default().build(state.raw_vectors.clone(), state.ids.clone());
-            state.hnsw_index = Some(hnsw);
-        } else {
-            state.hnsw_index = None;
-        }
+        state.rebuild_hnsw_live();
 
         Ok(purged_count)
     }
 
-    pub fn delete_id(&self, id: usize) -> bool {
-        let wal_lock = self.wal_path.read().unwrap();
-        append_wal(&wal_lock, &WalEntry::Delete { id });
+    pub fn delete_id(&self, id: usize) -> PyResult<bool> {
+        // Consistent lock order: state FIRST, then wal_path
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
+        let wal_lock = self
+            .wal_path
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("WAL lock poisoned"))?;
 
-        let mut state = self.state.write().unwrap();
-
-        if let Some(meta) = state.metadata_store.remove(&id) {
-            for (k, v) in meta {
-                if let Some(val_map) = state.inverted_index.get_mut(&k) {
-                    if let Some(id_set) = val_map.get_mut(&v) {
-                        id_set.remove(&id);
-                    }
-                }
-            }
-            state.tombstone_ids.insert(id);
-            true
-        } else if state.ids.contains(&id) {
-            state.tombstone_ids.insert(id);
-            true
-        } else {
-            false
+        let existed = state.ids.contains(&id) && !state.tombstone_ids.contains(&id);
+        if !existed {
+            return Ok(false);
         }
+
+        append_wal(&wal_lock, &WalEntry::Delete { id });
+        state.remove_metadata_from_inverted(id);
+        state.tombstone_ids.insert(id);
+        Ok(true)
     }
 
     pub fn update_id(
@@ -163,15 +241,23 @@ impl VectorIndex {
         new_vector_array: PyReadonlyArray1<f32>,
         new_metadata: HashMap<String, String>,
     ) -> PyResult<bool> {
-        self.delete_id(id);
+        let normalized_vec = if let Some(vec_slice) = new_vector_array.as_slice().ok() {
+            normalize_vector(vec_slice)
+        } else {
+            let owned: Vec<f32> = new_vector_array.as_array().iter().copied().collect();
+            normalize_vector(&owned)
+        };
 
-        let vec_slice = new_vector_array
-            .as_slice()
-            .map_err(|_| pyo3::exceptions::PyValueError::new_err("Vektör okunamadı!"))?;
+        // Consistent lock order: state FIRST, then wal_path
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
+        let wal_lock = self
+            .wal_path
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("WAL lock poisoned"))?;
 
-        let normalized_vec = normalize_vector(vec_slice);
-
-        let wal_lock = self.wal_path.read().unwrap();
         append_wal(
             &wal_lock,
             &WalEntry::Insert {
@@ -181,26 +267,8 @@ impl VectorIndex {
             },
         );
 
-        {
-            let mut state = self.state.write().unwrap();
-            state.raw_vectors.push(VectorPoint(normalized_vec));
-            state.ids.push(id);
-            state.metadata_store.insert(id, new_metadata.clone());
-
-            for (k, v) in &new_metadata {
-                state
-                    .inverted_index
-                    .entry(k.clone())
-                    .or_insert_with(HashMap::new)
-                    .entry(v.clone())
-                    .or_insert_with(HashSet::new)
-                    .insert(id);
-            }
-
-            state.tombstone_ids.remove(&id);
-        }
-
-        self.build_hnsw_index()?;
+        state.upsert_vector(id, normalized_vec, new_metadata);
+        state.rebuild_hnsw_live();
         Ok(true)
     }
 
@@ -213,21 +281,28 @@ impl VectorIndex {
         filter_value: Option<String>,
         operator: Option<String>,
     ) -> PyResult<Vec<(usize, f32, HashMap<String, String>)>> {
-        let state = self.state.read().unwrap();
+        if top_k == 0 {
+            return Ok(Vec::new());
+        }
+
+        let state = self
+            .state
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
         let hnsw = match &state.hnsw_index {
             Some(index) => index,
             None => {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "İndeks henüz inşa edilmedi!",
-                ))
+                return Err(PyValueError::new_err("İndeks henüz inşa edilmedi!"));
             }
         };
 
-        let query_slice = query_array
-            .as_slice()
-            .map_err(|_| pyo3::exceptions::PyValueError::new_err("Array sürekli değil!"))?;
+        let normalized_query = if let Ok(query_slice) = query_array.as_slice() {
+            normalize_vector(query_slice)
+        } else {
+            let owned: Vec<f32> = query_array.as_array().iter().copied().collect();
+            normalize_vector(&owned)
+        };
 
-        let normalized_query = normalize_vector(query_slice);
         let query_point = VectorPoint(normalized_query);
         let mut search = Search::default();
 
@@ -257,11 +332,12 @@ impl VectorIndex {
         }
 
         let mut filtered_results = Vec::new();
+        let mut seen_ids = HashSet::new();
 
         for item in hnsw.search(&query_point, &mut search) {
             let id = *item.value;
 
-            if state.tombstone_ids.contains(&id) {
+            if state.tombstone_ids.contains(&id) || !seen_ids.insert(id) {
                 continue;
             }
 
@@ -278,7 +354,9 @@ impl VectorIndex {
             if let (Some(k), Some(v)) = (&filter_key, &filter_value) {
                 if op != "==" {
                     if let Some(actual_val) = meta.get(k) {
-                        if let (Ok(actual_num), Ok(target_num)) = (actual_val.parse::<f64>(), v.parse::<f64>()) {
+                        if let (Ok(actual_num), Ok(target_num)) =
+                            (actual_val.parse::<f64>(), v.parse::<f64>())
+                        {
                             let is_match = match op.as_str() {
                                 ">=" => actual_num >= target_num,
                                 "<=" => actual_num <= target_num,
@@ -309,7 +387,10 @@ impl VectorIndex {
     }
 
     pub fn save_to_disk(&self, file_path: String) -> PyResult<()> {
-        let state = self.state.read().unwrap();
+        let state = self
+            .state
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
 
         let dump = (
             &state.raw_vectors,
@@ -320,12 +401,21 @@ impl VectorIndex {
         );
 
         let encoded = bincode::serialize(&dump)
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+            .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-        let mut file = File::create(&file_path)?;
-        file.write_all(&encoded)?;
+        // Atomic write: temp file -> sync_all -> rename
+        let tmp_path = format!("{}.tmp", file_path);
+        {
+            let mut file = File::create(&tmp_path)?;
+            file.write_all(&encoded)?;
+            file.sync_all()?;
+        }
+        fs::rename(&tmp_path, &file_path)?;
 
-        let wal_lock = self.wal_path.read().unwrap();
+        let wal_lock = self
+            .wal_path
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("WAL lock poisoned"))?;
         if let Some(ref path) = *wal_lock {
             let _ = File::create(path);
         }
@@ -334,7 +424,13 @@ impl VectorIndex {
     }
 
     pub fn load_from_disk(&self, file_path: String) -> PyResult<()> {
-        let mut state = self.state.write().unwrap();
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
+
+        // Reset state before loading snapshot + WAL to avoid duplicating entries
+        *state = InnerState::default();
 
         if let Ok(mut file) = File::open(&file_path) {
             let mut buffer = Vec::new();
@@ -357,40 +453,28 @@ impl VectorIndex {
             }
         }
 
-        let wal_lock = self.wal_path.read().unwrap();
+        let wal_lock = self
+            .wal_path
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("WAL lock poisoned"))?;
         if let Some(ref path) = *wal_lock {
             if let Ok(wal_file) = File::open(path) {
                 let reader = BufReader::new(wal_file);
                 for line in reader.lines().flatten() {
                     if let Ok(entry) = serde_json::from_str::<WalEntry>(&line) {
                         match entry {
-                            WalEntry::Insert { id, vector, metadata } => {
-                                state.raw_vectors.push(VectorPoint(vector));
-                                state.ids.push(id);
-                                state.metadata_store.insert(id, metadata.clone());
-
-                                for (k, v) in &metadata {
-                                    state
-                                        .inverted_index
-                                        .entry(k.clone())
-                                        .or_insert_with(HashMap::new)
-                                        .entry(v.clone())
-                                        .or_insert_with(HashSet::new)
-                                        .insert(id);
-                                }
-                                state.tombstone_ids.remove(&id);
+                            WalEntry::Insert {
+                                id,
+                                vector,
+                                metadata,
+                            } => {
+                                state.upsert_vector(id, vector, metadata);
                             }
                             WalEntry::Delete { id } => {
-                                if let Some(meta) = state.metadata_store.remove(&id) {
-                                    for (k, v) in meta {
-                                        if let Some(val_map) = state.inverted_index.get_mut(&k) {
-                                            if let Some(id_set) = val_map.get_mut(&v) {
-                                                id_set.remove(&id);
-                                            }
-                                        }
-                                    }
+                                if state.ids.contains(&id) {
+                                    state.remove_metadata_from_inverted(id);
+                                    state.tombstone_ids.insert(id);
                                 }
-                                state.tombstone_ids.insert(id);
                             }
                         }
                     }
@@ -398,16 +482,28 @@ impl VectorIndex {
             }
         }
 
-        if !state.raw_vectors.is_empty() {
-            let hnsw = Builder::default().build(state.raw_vectors.clone(), state.ids.clone());
-            state.hnsw_index = Some(hnsw);
-        }
-
+        state.rebuild_hnsw_live();
         Ok(())
     }
 
-    pub fn len(&self) -> usize {
-        let state = self.state.read().unwrap();
-        state.ids.len() - state.tombstone_ids.len()
+    pub fn len(&self) -> PyResult<usize> {
+        let state = self
+            .state
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
+        let live_count = state
+            .ids
+            .iter()
+            .filter(|id| !state.tombstone_ids.contains(id))
+            .count();
+        Ok(live_count)
+    }
+
+    pub fn max_id(&self) -> PyResult<Option<usize>> {
+        let state = self
+            .state
+            .read()
+            .map_err(|_| PyRuntimeError::new_err("State lock poisoned"))?;
+        Ok(state.ids.iter().copied().max())
     }
 }

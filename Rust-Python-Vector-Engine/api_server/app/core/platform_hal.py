@@ -183,11 +183,10 @@ class PlatformHAL:
                     "bash", "-c", command
                 ]
                 res = subprocess.run(bwrap_cmd, capture_output=True, text=True, timeout=timeout)
-                # Eğer bwrap container içinde, CI runner'da veya kısıtlı yetkilerde başarısız olduysa subshell'e geri çekil
-                if res.returncode != 0 and (
-                    "bwrap" in res.stderr.lower()
-                    or any(err in res.stderr.lower() for err in ["namespace", "not permitted", "not implemented", "permission", "cannot", "failed", "denied"])
-                ):
+                # Yalnızca bwrap'in kendisi konteyner/namespace kısıtı nedeniyle başlayamadıysa geri çekil.
+                # Komutun kendi "Permission denied" hatası asla sandbox'sız yeniden çalıştırılmamalıdır!
+                stderr_lower = res.stderr.lstrip().lower()
+                if res.returncode != 0 and stderr_lower.startswith("bwrap:"):
                     return subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
                 return res
 
@@ -195,8 +194,8 @@ class PlatformHAL:
         elif os_type == "darwin":
             sandbox_exec = shutil.which("sandbox-exec")
             if sandbox_exec:
-                # Basic seatbelt profile allowing local writes only to cwd and temp
-                seatbelt_profile = f"(version 1) (allow default) (deny file-write* (regex #\"^/(usr|etc|bin|sbin|System|Library)\")) (allow file-write* (subpath \"{cwd}\")) (allow file-write* (subpath \"/tmp\"))"
+                safe_cwd = os.path.realpath(cwd).replace("\\", "\\\\").replace('"', '\\"')
+                seatbelt_profile = f'(version 1) (allow default) (deny file-write* (regex #"^/(usr|etc|bin|sbin|System|Library)")) (allow file-write* (subpath "{safe_cwd}")) (allow file-write* (subpath "/tmp"))'
                 cmd = [sandbox_exec, "-p", seatbelt_profile, "bash", "-c", command]
                 return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 

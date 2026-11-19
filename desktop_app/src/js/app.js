@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Helper: Safe HTML Entity Escaping
   function escapeHtml(str) {
-    if (!str) return "";
+    if (str === null || str === undefined) return "";
     return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -90,13 +90,16 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       hubResultsGrid.innerHTML = data.map(item => {
-        const repo = item.id;
-        const quant = item.recommended_quant || (repo.split('/')[1] ? repo.split('/')[1].toLowerCase() + "-q4_k_m.gguf" : "model-q4.gguf");
+        const repo = escapeHtml(item.id || "");
+        const rawRepo = item.id || "";
+        const rawQuant = item.recommended_quant || (rawRepo.split('/')[1] ? rawRepo.split('/')[1].toLowerCase() + "-q4_k_m.gguf" : "model-q4.gguf");
+        const quant = escapeHtml(rawQuant);
+        const author = escapeHtml(item.author || "Community");
         return `
           <div class="hub-card">
             <div>
               <div class="hub-card-title">${repo}</div>
-              <div class="hub-card-author">Geliştirici: ${item.author || "Community"}</div>
+              <div class="hub-card-author">Geliştirici: ${author}</div>
               <div class="hub-card-meta">
                 <span>${(item.downloads || 0).toLocaleString()} indirme</span>
                 <span>·</span>
@@ -126,7 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       });
     } catch (err) {
-      hubResultsGrid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--accent-red); padding: 30px 0;">Arama hatası: ${err.message}</div>`;
+      hubResultsGrid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--accent-red); padding: 30px 0;">Arama hatası: ${escapeHtml(err.message)}</div>`;
     }
   }
 
@@ -143,20 +146,30 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ repo: repo, filename: filename })
       });
 
+      if (!response.ok) {
+        hubDownloadStats.textContent = `⚠️ İndirme başlatılamadı (HTTP ${response.status})`;
+        return;
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
+      let sseBuffer = "";
 
       while (true) {
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done) {
+          sseBuffer += decoder.decode();
+        } else {
+          sseBuffer += decoder.decode(value, { stream: true });
+        }
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
+        const lines = sseBuffer.split("\n");
+        sseBuffer = done ? "" : (lines.pop() || "");
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             const dataStr = line.slice(6).trim();
-            if (!dataStr) continue;
+            if (!dataStr || dataStr === "[DONE]") continue;
             try {
               const event = JSON.parse(dataStr);
               if (event.status === "downloading") {
@@ -168,10 +181,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 hubDownloadStats.textContent = "✅ Tamamlandı ve kataloğa eklendi!";
                 appendMessage("ai", `🎉 **Yeni Model İndirildi ve Kataloğa Eklendi:** \`${event.model_id || filename}\`\nArtık model seçiciden doğrudan bu modeli seçebilirsiniz.`);
                 refreshModelSelector();
+              } else if (event.status === "error") {
+                hubDownloadStats.textContent = `⚠️ Hata: ${event.message || "İndirme başarısız."}`;
               }
             } catch (e) {}
           }
         }
+        if (done) break;
       }
     } catch (err) {
       hubDownloadStats.textContent = `⚠️ Hata: ${err.message}`;
@@ -183,14 +199,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch(`${API_BASE}/models`);
       if (res.ok) {
         const models = await res.json();
-        if (modelSelector) {
+        if (modelSelector && Array.isArray(models) && models.length > 0) {
           modelSelector.innerHTML = models.map(m => `
-            <option value="${m.id}">${m.id === "qwen2.5-coder-7b" ? "🧠" : "⚡"} ${m.name} (${m.disk_size_gb} GB)</option>
+            <option value="${escapeHtml(m.id)}" ${m.is_active ? "selected" : ""}>${m.id === "qwen2.5-coder-7b" ? "🧠" : "⚡"} ${escapeHtml(m.name)} (${escapeHtml(m.disk_size_gb)} GB)</option>
           `).join('');
         }
       }
     } catch (e) {}
   }
+
+  refreshModelSelector();
 
   if (btnOpenModelHub) {
     btnOpenModelHub.addEventListener("click", () => {
@@ -208,6 +226,15 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnHubSearch) {
     btnHubSearch.addEventListener("click", () => {
       searchHuggingFaceHub(hubSearchInput.value.trim());
+    });
+  }
+
+  if (hubSearchInput) {
+    hubSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        searchHuggingFaceHub(hubSearchInput.value.trim());
+      }
     });
   }
 
@@ -287,7 +314,7 @@ document.addEventListener("DOMContentLoaded", () => {
         function renderNode(node, indent = 0) {
           const pad = "&nbsp;".repeat(indent * 2);
           const icon = node.is_dir ? "📁 " : "📄 ";
-          treeHtml += `<div>${pad}${icon}${node.name}</div>`;
+          treeHtml += `<div>${pad}${icon}${escapeHtml(node.name)}</div>`;
           if (node.children) {
             node.children.forEach(c => renderNode(c, indent + 1));
           }
@@ -393,24 +420,197 @@ document.addEventListener("DOMContentLoaded", () => {
     return msg;
   }
 
-  // 6. Minimalist Linear/Cursor HITL Approval Card
+  // 6. Composer-Grade Unified Diff Viewer, HITL Apply/Reject & 1-Click Undo
+  const changedFilesBar = document.getElementById("changed-files-bar");
+  const changedFilesTitle = document.getElementById("changed-files-title");
+  const changedFilesList = document.getElementById("changed-files-list");
+  const btnUndoAllChanges = document.getElementById("btn-undo-all-changes");
+
+  function escapeDiffHtml(str) {
+    return String(str ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderUnifiedDiffHtml(diffPreview) {
+    if (!diffPreview || !Array.isArray(diffPreview.files) || diffPreview.files.length === 0) {
+      return "";
+    }
+
+    return diffPreview.files.map((fileObj) => {
+      const hunks = Array.isArray(fileObj.hunks) ? fileObj.hunks : [];
+      const rowsHtml = hunks.length > 0
+        ? hunks.map((h) => {
+            if (h.type === "header") {
+              return `<tr class="aura-diff-row header"><td class="aura-diff-ln"></td><td class="aura-diff-ln"></td><td class="aura-diff-sign"></td><td class="aura-diff-code">${escapeDiffHtml(h.text)}</td></tr>`;
+            }
+            const sign = h.type === "add" ? "+" : (h.type === "del" ? "-" : " ");
+            const safeType = (h.type === "add" || h.type === "del" || h.type === "context") ? h.type : "context";
+            const oldLn = h.old_line != null ? h.old_line : "";
+            const newLn = h.new_line != null ? h.new_line : "";
+            return `<tr class="aura-diff-row ${safeType}"><td class="aura-diff-ln">${oldLn}</td><td class="aura-diff-ln">${newLn}</td><td class="aura-diff-sign">${sign}</td><td class="aura-diff-code">${escapeDiffHtml(h.text)}</td></tr>`;
+          }).join("")
+        : `<tr class="aura-diff-row context"><td class="aura-diff-ln"></td><td class="aura-diff-ln"></td><td class="aura-diff-sign"></td><td class="aura-diff-code">(Satır farkı bulunamadı)</td></tr>`;
+
+      return `
+        <div class="aura-diff-card">
+          <div class="aura-diff-file-header">
+            <div class="aura-diff-file-info">
+              <span class="aura-diff-file-path" title="${escapeDiffHtml(fileObj.path)}">${escapeDiffHtml(fileObj.path)}</span>
+              ${fileObj.is_new_file ? `<span class="aura-diff-new-badge">YENİ DOSYA</span>` : ""}
+            </div>
+            <div class="aura-diff-stats">
+              <span class="aura-diff-stat-add">+${fileObj.additions || 0}</span>
+              <span class="aura-diff-stat-del">-${fileObj.deletions || 0}</span>
+            </div>
+          </div>
+          <div class="aura-diff-scroll">
+            <table class="aura-diff-table">
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  async function undoSnapshotById(snapshotId, feedbackEl = null, buttonEl = null) {
+    if (!snapshotId) return;
+    if (buttonEl) {
+      buttonEl.disabled = true;
+      buttonEl.textContent = "Geri alınıyor...";
+    }
+    try {
+      const res = await fetch(`${API_BASE}/agent/changes/undo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snapshot_id: snapshotId })
+      });
+      const data = await res.json();
+      if (res.ok && (data.status === "REVERTED" || data.status === "ALREADY_REVERTED")) {
+        if (buttonEl) {
+          buttonEl.textContent = "↩ Geri Alındı";
+          buttonEl.disabled = true;
+        }
+        if (feedbackEl) {
+          feedbackEl.innerHTML = `<span style="color:var(--accent-amber);">↩ <strong>Geri Alındı:</strong> ${escapeDiffHtml(data.message)}</span>`;
+        }
+        refreshChangedFilesBar();
+      } else {
+        if (buttonEl) {
+          buttonEl.disabled = false;
+          buttonEl.textContent = "↩ Geri Al (Undo)";
+        }
+        if (feedbackEl) {
+          feedbackEl.innerHTML = `<span style="color:var(--accent-red);">❌ ${escapeDiffHtml(data.detail || data.message || "Geri alma başarısız.")}</span>`;
+        }
+      }
+    } catch (err) {
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.textContent = "↩ Geri Al (Undo)";
+      }
+      if (feedbackEl) {
+        feedbackEl.innerHTML = `<span style="color:var(--accent-red);">❌ Geri alma hatası: ${escapeDiffHtml(err.message)}</span>`;
+      }
+    }
+  }
+
+  async function refreshChangedFilesBar() {
+    if (!changedFilesBar || !changedFilesList) return;
+    try {
+      const res = await fetch(`${API_BASE}/agent/changes`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const changes = Array.isArray(data.changes) ? data.changes : [];
+      const activeChanges = changes.filter((c) => c.status === "applied");
+
+      if (changes.length === 0) {
+        changedFilesBar.classList.remove("visible");
+        return;
+      }
+
+      changedFilesBar.classList.add("visible");
+      changedFilesTitle.textContent = `Değiştirilen Dosyalar (${activeChanges.length} aktif / ${changes.length} toplam)`;
+      if (btnUndoAllChanges) {
+        btnUndoAllChanges.style.display = activeChanges.length > 0 ? "inline-block" : "none";
+      }
+
+      changedFilesList.innerHTML = changes.map((chg) => {
+        const isReverted = chg.status === "reverted";
+        const fileNames = (chg.files || []).map((f) => f.path).join(", ") || chg.tool;
+        return `
+          <div class="changed-file-chip ${isReverted ? "reverted" : ""}">
+            <span>${escapeDiffHtml(fileNames)}</span>
+            <span class="aura-diff-stat-add">+${chg.total_additions || 0}</span>
+            <span class="aura-diff-stat-del">-${chg.total_deletions || 0}</span>
+            ${!isReverted
+              ? `<button class="changed-file-chip-undo" data-snap="${escapeDiffHtml(chg.snapshot_id)}" title="Bu değişikliği geri al">↩ Geri Al</button>`
+              : `<span style="color:var(--text-dim); font-size:0.68rem;">(geri alındı)</span>`
+            }
+          </div>
+        `;
+      }).join("");
+
+      changedFilesList.querySelectorAll(".changed-file-chip-undo").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const sid = btn.getAttribute("data-snap");
+          undoSnapshotById(sid, null, btn);
+        });
+      });
+    } catch (err) {
+      // Sessizce geç (sunucu henüz hazır değilse)
+    }
+  }
+
+  if (btnUndoAllChanges) {
+    btnUndoAllChanges.addEventListener("click", async () => {
+      try {
+        const res = await fetch(`${API_BASE}/agent/changes`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const active = (data.changes || []).filter((c) => c.status === "applied");
+        for (const chg of active) {
+          await fetch(`${API_BASE}/agent/changes/undo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ snapshot_id: chg.snapshot_id })
+          });
+        }
+        refreshChangedFilesBar();
+      } catch (err) {}
+    });
+  }
+
+  refreshChangedFilesBar();
+
   function appendApprovalCard(pendingAction) {
+    const hasDiff = pendingAction.diff_preview && Array.isArray(pendingAction.diff_preview.files) && pendingAction.diff_preview.files.length > 0;
+    const diffBodyHtml = hasDiff
+      ? renderUnifiedDiffHtml(pendingAction.diff_preview)
+      : `<pre style="background:#090a0d; padding:8px 10px; border-radius:5px; font-size:0.75rem; overflow-x:auto; color:var(--text-secondary); border:1px solid var(--border-hairline); font-family:var(--font-code);">${escapeDiffHtml(JSON.stringify(pendingAction.args, null, 2))}</pre>`;
+
+    const summaryText = hasDiff
+      ? `${pendingAction.diff_preview.total_files} dosya değiştirilecek (<span class="aura-diff-stat-add">+${pendingAction.diff_preview.total_additions}</span> / <span class="aura-diff-stat-del">-${pendingAction.diff_preview.total_deletions}</span>)`
+      : `Ajan kalıcı değişiklik yapacak bir işlem için onayınızı talep ediyor:`;
+
     const cardHtml = `
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-        <span style="background:rgba(251, 191, 36, 0.12); color:var(--accent-amber); border:1px solid rgba(251, 191, 36, 0.25); font-weight:600; font-size:0.68rem; font-family:var(--font-code); padding:2px 6px; border-radius:4px;">İNSAN ONAYI GEREKİYOR</span>
-        <strong style="color:var(--text-main); font-size:0.82rem; font-family:var(--font-code);">${pendingAction.tool}</strong>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="background:rgba(251, 191, 36, 0.12); color:var(--accent-amber); border:1px solid rgba(251, 191, 36, 0.25); font-weight:600; font-size:0.68rem; font-family:var(--font-code); padding:2px 6px; border-radius:4px;">${hasDiff ? "KOD DEĞİŞİKLİĞİ ÖNİZLEMESİ" : "İNSAN ONAYI GEREKİYOR"}</span>
+          <strong style="color:var(--text-main); font-size:0.82rem; font-family:var(--font-code);">${escapeDiffHtml(pendingAction.tool)}</strong>
+        </div>
+        <span style="font-size:0.72rem; color:var(--text-muted);">${summaryText}</span>
       </div>
-      <p style="font-size:0.80rem; color:var(--text-muted); margin-bottom:8px;">
-        Ajan kalıcı değişiklik yapacak bir işlem için onayınızı talep ediyor:
-      </p>
-      <pre style="background:#090a0d; padding:8px 10px; border-radius:5px; font-size:0.75rem; overflow-x:auto; color:var(--text-secondary); border:1px solid var(--border-hairline); font-family:var(--font-code);">${JSON.stringify(pendingAction.args, null, 2)}</pre>
-      
-      <div style="display:flex; gap:8px; margin-top:10px;" id="actions-${pendingAction.action_id}">
-        <button id="btn-approve-${pendingAction.action_id}" style="background:var(--text-main); color:#0c0d0f; border:none; padding:5px 12px; border-radius:4px; font-weight:550; cursor:pointer; font-size:0.76rem;">
-          Onayla ve Çalıştır
+      ${diffBodyHtml}
+      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;" id="actions-${pendingAction.action_id}">
+        <button id="btn-approve-${pendingAction.action_id}" class="btn-diff-apply">
+          ${hasDiff ? "✓ Değişikliği Uygula (Apply)" : "Onayla ve Çalıştır"}
         </button>
-        <button id="btn-reject-${pendingAction.action_id}" style="background:transparent; color:var(--text-muted); border:1px solid var(--border-hairline); padding:5px 12px; border-radius:4px; font-weight:500; cursor:pointer; font-size:0.76rem;">
-          Reddet
+        <button id="btn-reject-${pendingAction.action_id}" class="btn-diff-reject">
+          ✕ Reddet
         </button>
       </div>
       <div id="res-${pendingAction.action_id}" style="display:none; margin-top:8px; font-size:0.78rem;"></div>
@@ -437,14 +637,39 @@ document.addEventListener("DOMContentLoaded", () => {
           })
         });
         const data = await res.json();
+        if (!res.ok) {
+          btnApprove.disabled = false;
+          btnReject.disabled = false;
+          resBox.style.display = "block";
+          resBox.innerHTML = `<span style="color:var(--accent-red);">❌ <strong>Sunucu Hatası (HTTP ${res.status}):</strong> ${escapeDiffHtml(data.detail || "Karar uygulanamadı.")}</span>`;
+          return;
+        }
         actionsBox.style.display = "none";
         resBox.style.display = "block";
         if (approved) {
-          resBox.innerHTML = `<span style="color:var(--accent-green);">✅ <strong>Onaylandı ve Çalıştırıldı:</strong></span><pre style="background:rgba(0,0,0,0.5); padding:6px; border-radius:4px; margin-top:4px; font-size:0.8rem;">${typeof data.result === 'object' ? JSON.stringify(data.result, null, 2) : data.result}</pre>`;
+          const resultStr = typeof data.result === "object" ? JSON.stringify(data.result, null, 2) : String(data.result ?? "");
+          const undoBtnId = `btn-undo-${data.snapshot_id || pendingAction.action_id}`;
+          resBox.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+              <span style="color:var(--accent-green);">✅ <strong>Uygulandı:</strong> ${escapeDiffHtml(resultStr)}</span>
+              ${data.snapshot_id ? `<button id="${undoBtnId}" class="btn-diff-undo">↩ Geri Al (Undo)</button>` : ""}
+            </div>
+            <div id="undo-msg-${pendingAction.action_id}" style="margin-top:6px; font-size:0.74rem;"></div>
+          `;
+          if (data.snapshot_id) {
+            const btnUndo = document.getElementById(undoBtnId);
+            const undoMsg = document.getElementById(`undo-msg-${pendingAction.action_id}`);
+            if (btnUndo) {
+              btnUndo.addEventListener("click", () => undoSnapshotById(data.snapshot_id, undoMsg, btnUndo));
+            }
+            refreshChangedFilesBar();
+          }
         } else {
-          resBox.innerHTML = `<span style="color:var(--accent-red);">❌ <strong>İptal Edildi:</strong> Eylem yürütülmedi.</span>`;
+          resBox.innerHTML = `<span style="color:var(--accent-red);">❌ <strong>Reddedildi:</strong> Değişiklik uygulanmadı.</span>`;
         }
       } catch (err) {
+        btnApprove.disabled = false;
+        btnReject.disabled = false;
         alert("Karar uygulanırken hata: " + err.message);
       }
     }
@@ -453,11 +678,19 @@ document.addEventListener("DOMContentLoaded", () => {
     btnReject.addEventListener("click", () => sendDecision(false, "Kullanıcı masaüstü arayüzünden reddetti."));
   }
 
-  // 7. Chat Form Submit
+  window.auraAppendApprovalCard = appendApprovalCard;
+
+  // 7. Chat Form Submit (with in-flight concurrency guard)
+  let isChatSubmitting = false;
   chatForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (isChatSubmitting) return;
     const query = userInput.value.trim();
     if (!query) return;
+
+    isChatSubmitting = true;
+    const sendBtn = chatForm.querySelector(".btn-send");
+    if (sendBtn) sendBtn.disabled = true;
 
     appendMessage("user", query);
     userInput.value = "";
@@ -574,80 +807,115 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
 
-        const response = await fetch(`${API_BASE}/agent/react/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: query, max_steps: 5, require_approval: requireApproval })
-        });
+        try {
+          const response = await fetch(`${API_BASE}/agent/react/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: query, max_steps: 5, require_approval: requireApproval })
+          });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
+          if (!response.ok) {
+            accumulatedTokens = `⚠️ Sunucu hatası (HTTP ${response.status}).`;
+          } else {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+            let streamDone = false;
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
+            while (!streamDone) {
+              const { value, done } = await reader.read();
+              if (done) {
+                buffer += decoder.decode();
+              } else {
+                buffer += decoder.decode(value, { stream: true });
+              }
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop();
+              const lines = buffer.split("\n");
+              buffer = done ? "" : (lines.pop() || "");
 
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const dataStr = line.slice(6).trim();
-              if (dataStr === "[DONE]") break;
-
-              try {
-                const event = JSON.parse(dataStr);
-
-                if (event.type === "token") {
-                  if (finalThinkTime === null) {
-                    finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
-                    clearInterval(timerInterval);
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  const dataStr = line.slice(6).trim();
+                  if (dataStr === "[DONE]") {
+                    streamDone = true;
+                    break;
                   }
-                  accumulatedTokens += event.content;
-                  scheduleRender();
-                } else if (event.type === "thought") {
-                  thoughts.push(event.content);
-                  scheduleRender();
-                } else if (event.type === "action") {
-                  actions.push({ tool: event.tool, args: event.args });
-                  scheduleRender();
-                } else if (event.type === "observation") {
-                  if (actions.length > 0 && actions[actions.length - 1].tool === event.tool) {
-                    actions[actions.length - 1].observation = event.observation;
-                  } else {
-                    actions.push({ tool: event.tool, observation: event.observation });
-                  }
-                  scheduleRender();
-                } else if (event.type === "final_answer") {
-                  if (finalThinkTime === null) {
-                    finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
-                    clearInterval(timerInterval);
-                  }
-                  hasFinalAnswer = true;
-                  accumulatedTokens = event.content;
-                  scheduleRender();
-                } else if (event.type === "waiting_approval") {
-                  if (finalThinkTime === null) {
-                    finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
-                    clearInterval(timerInterval);
-                  }
-                  pendingAction = event.pending_action;
-                  scheduleRender();
+
+                  try {
+                    const event = JSON.parse(dataStr);
+
+                    if (event.type === "token") {
+                      if (finalThinkTime === null) {
+                        finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
+                        clearInterval(timerInterval);
+                      }
+                      accumulatedTokens += event.content;
+                      scheduleRender();
+                    } else if (event.type === "thought") {
+                      thoughts.push(event.content);
+                      scheduleRender();
+                    } else if (event.type === "action") {
+                      actions.push({ tool: event.tool, args: event.args });
+                      scheduleRender();
+                    } else if (event.type === "observation") {
+                      if (actions.length > 0 && actions[actions.length - 1].tool === event.tool) {
+                        actions[actions.length - 1].observation = event.observation;
+                      } else {
+                        actions.push({ tool: event.tool, observation: event.observation });
+                      }
+                      if (event.diff_preview && event.snapshot_id) {
+                        const safeSnapId = escapeDiffHtml(event.snapshot_id);
+                        const diffCardHtml = `
+                          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                            <span style="background:rgba(52, 211, 153, 0.12); color:var(--accent-green); border:1px solid rgba(52, 211, 153, 0.25); font-weight:600; font-size:0.68rem; font-family:var(--font-code); padding:2px 6px; border-radius:4px;">UYGULANAN DEĞİŞİKLİK</span>
+                            <button id="btn-auto-undo-${safeSnapId}" class="btn-diff-undo">↩ Geri Al (Undo)</button>
+                          </div>
+                          ${renderUnifiedDiffHtml(event.diff_preview)}
+                          <div id="auto-undo-msg-${safeSnapId}" style="margin-top:4px; font-size:0.74rem;"></div>
+                        `;
+                        appendMessage("ai", diffCardHtml, true);
+                        const btnAutoUndo = document.getElementById(`btn-auto-undo-${safeSnapId}`);
+                        const autoUndoMsg = document.getElementById(`auto-undo-msg-${safeSnapId}`);
+                        if (btnAutoUndo) {
+                          btnAutoUndo.addEventListener("click", () => undoSnapshotById(event.snapshot_id, autoUndoMsg, btnAutoUndo));
+                        }
+                        refreshChangedFilesBar();
+                      }
+                      scheduleRender();
+                    } else if (event.type === "final_answer") {
+                      if (finalThinkTime === null) {
+                        finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
+                        clearInterval(timerInterval);
+                      }
+                      hasFinalAnswer = true;
+                      accumulatedTokens = event.content;
+                      scheduleRender();
+                    } else if (event.type === "waiting_approval") {
+                      if (finalThinkTime === null) {
+                        finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
+                        clearInterval(timerInterval);
+                      }
+                      pendingAction = event.pending_action;
+                      scheduleRender();
+                    } else if (event.type === "error") {
+                      accumulatedTokens = `⚠️ Hata: ${event.message || "Bilinmeyen sunucu hatası."}`;
+                      scheduleRender();
+                    }
+                  } catch (e) {}
                 }
-              } catch (e) {}
+              }
+              if (done) break;
             }
           }
+        } finally {
+          clearInterval(timerInterval);
+          if (finalThinkTime === null) {
+            finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
+          }
+          isStreaming = false;
+          hasFinalAnswer = true;
+          renderBubbleUI();
         }
-
-        clearInterval(timerInterval);
-        if (finalThinkTime === null) {
-          finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
-        }
-        isStreaming = false;
-        hasFinalAnswer = true;
-        renderBubbleUI();
 
         if (pendingAction) {
           appendApprovalCard(pendingAction);
@@ -660,7 +928,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div class="message-bubble">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
               <span class="swarm-badge architect">🐝 ÇOKLU-AJAN SÜRÜSÜ BAŞLATILDI</span>
-              <span style="font-size:0.75rem; color:var(--text-dim); font-family:var(--font-code);">${query}</span>
+              <span style="font-size:0.75rem; color:var(--text-dim); font-family:var(--font-code);">${escapeHtml(query)}</span>
             </div>
             <div class="swarm-events-container" style="display:flex; flex-direction:column; gap:8px;"></div>
           </div>
@@ -676,73 +944,111 @@ document.addEventListener("DOMContentLoaded", () => {
           body: JSON.stringify({ task: query, max_correction_loops: 2, auto_rollback_on_failure: true })
         });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
+        if (!response.ok) {
+          eventsContainer.innerHTML = `<div class="swarm-card" style="color:var(--accent-red);">⚠️ Swarm sunucu hatası (HTTP ${response.status}).</div>`;
+        } else {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder("utf-8");
+          let swarmBuffer = "";
+          let swarmDone = false;
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const dataStr = line.slice(6).trim();
-              if (dataStr === "[DONE]") break;
-              try {
-                const event = JSON.parse(dataStr);
-                const card = document.createElement("div");
-                card.className = "swarm-card";
-
-                if (event.agent === "architect") {
-                  card.innerHTML = `
-                    <div class="swarm-header">
-                      <span class="swarm-badge architect">MİMAR · ARCHITECT</span>
-                      <span style="font-size:0.70rem; color:var(--text-dim); font-family:var(--font-code);">${event.action || 'plan'}</span>
-                    </div>
-                    <div style="font-size:0.82rem; color:var(--text-main); margin-bottom:4px;">${event.message}</div>
-                    ${event.plan && event.plan.steps ? `
-                      <div style="background:#090a0d; border:1px solid var(--border-hairline); padding:6px 10px; border-radius:5px; margin-top:6px;">
-                        ${event.plan.steps.map((s, idx) => `<div class="swarm-dag-step"><span style="color:var(--text-dim);">${idx+1}.</span> <span>${s}</span></div>`).join('')}
-                      </div>
-                    ` : ''}
-                  `;
-                } else if (event.agent === "coder") {
-                  card.innerHTML = `
-                    <div class="swarm-header">
-                      <span class="swarm-badge coder">GELİŞTİRİCİ · CODER</span>
-                      <span style="font-size:0.70rem; color:var(--text-dim); font-family:var(--font-code);">${event.action || 'patch'}</span>
-                    </div>
-                    <div style="font-size:0.82rem; color:var(--text-main);">${event.message}</div>
-                    ${event.target_file ? `<div class="swarm-diff-box">Dosya: ${event.target_file}<br>Durum: ${event.result || 'Değişiklik hazırlandı'}</div>` : ''}
-                  `;
-                } else if (event.agent === "verifier") {
-                  const isVerifying = event.action === "verifying";
-                  const isPassed = event.verdict === "PASSED";
-                  const badgeClass = isVerifying ? "coder" : (isPassed ? "verifier" : "rejected");
-                  const badgeText = isVerifying ? "KONTROL EDİLİYOR" : (isPassed ? "PASSED" : "FAILED");
-                  card.innerHTML = `
-                    <div class="swarm-header">
-                      <span class="swarm-badge ${badgeClass}">DENETÇİ · VERIFIER</span>
-                      <span style="font-size:0.70rem; font-weight:600; font-family:var(--font-code); color:${isVerifying ? 'var(--accent-primary)' : (isPassed ? 'var(--accent-green)' : 'var(--accent-red)')};">${badgeText}</span>
-                    </div>
-                    <div style="font-size:0.82rem; color:var(--text-main);">${event.message}</div>
-                    ${event.error ? `<pre style="background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.2); color:#fca5a5; padding:6px; border-radius:4px; font-size:0.74rem; font-family:var(--font-code); margin-top:4px;">${event.error}</pre>` : ''}
-                  `;
-                } else if (event.status) {
-                  card.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:6px; font-size:0.80rem; font-weight:500; color:var(--accent-green);">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                      <span>${event.message}</span>
-                    </div>
-                  `;
-                }
-
-                eventsContainer.appendChild(card);
-                chatHistory.scrollTop = chatHistory.scrollHeight;
-              } catch (e) {}
+          while (!swarmDone) {
+            const { value, done } = await reader.read();
+            if (done) {
+              swarmBuffer += decoder.decode();
+            } else {
+              swarmBuffer += decoder.decode(value, { stream: true });
             }
+
+            const lines = swarmBuffer.split("\n");
+            swarmBuffer = done ? "" : (lines.pop() || "");
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const dataStr = line.slice(6).trim();
+                if (dataStr === "[DONE]") {
+                  swarmDone = true;
+                  break;
+                }
+                try {
+                  const event = JSON.parse(dataStr);
+                  const card = document.createElement("div");
+                  card.className = "swarm-card";
+
+                  if (event.agent === "architect") {
+                    card.innerHTML = `
+                      <div class="swarm-header">
+                        <span class="swarm-badge architect">MİMAR · ARCHITECT</span>
+                        <span style="font-size:0.70rem; color:var(--text-dim); font-family:var(--font-code);">${escapeHtml(event.action || 'plan')}</span>
+                      </div>
+                      <div style="font-size:0.82rem; color:var(--text-main); margin-bottom:4px;">${escapeHtml(event.message)}</div>
+                      ${event.plan && Array.isArray(event.plan.steps) ? `
+                        <div style="background:#090a0d; border:1px solid var(--border-hairline); padding:6px 10px; border-radius:5px; margin-top:6px;">
+                          ${event.plan.steps.map((s, idx) => `<div class="swarm-dag-step"><span style="color:var(--text-dim);">${idx+1}.</span> <span>${escapeHtml(s)}</span></div>`).join('')}
+                        </div>
+                      ` : ''}
+                    `;
+                  } else if (event.agent === "coder") {
+                    const hasSwarmDiff = event.diff_preview && Array.isArray(event.diff_preview.files) && event.diff_preview.files.length > 0;
+                    const safeSnapId = event.snapshot_id ? escapeDiffHtml(event.snapshot_id) : "";
+                    const swarmUndoId = safeSnapId ? `btn-swarm-undo-${safeSnapId}` : "";
+                    card.innerHTML = `
+                      <div class="swarm-header">
+                        <span class="swarm-badge coder">GELİŞTİRİCİ · CODER</span>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <span style="font-size:0.70rem; color:var(--text-dim); font-family:var(--font-code);">${escapeHtml(event.action || 'patch')}</span>
+                          ${safeSnapId ? `<button id="${swarmUndoId}" class="btn-diff-undo" style="padding:2px 8px; font-size:0.69rem;">↩ Geri Al</button>` : ""}
+                        </div>
+                      </div>
+                      <div style="font-size:0.82rem; color:var(--text-main);">${escapeDiffHtml(event.message)}</div>
+                      ${hasSwarmDiff
+                        ? renderUnifiedDiffHtml(event.diff_preview)
+                        : (event.target_file ? `<div class="swarm-diff-box">Dosya: ${escapeDiffHtml(event.target_file)}<br>Durum: ${escapeDiffHtml(event.result || 'Değişiklik hazırlandı')}</div>` : '')
+                      }
+                      ${safeSnapId ? `<div id="swarm-undo-msg-${safeSnapId}" style="margin-top:4px; font-size:0.74rem;"></div>` : ""}
+                    `;
+                    if (event.snapshot_id) {
+                      setTimeout(() => {
+                        const btnSwarmUndo = document.getElementById(swarmUndoId);
+                        const swarmUndoMsg = document.getElementById(`swarm-undo-msg-${safeSnapId}`);
+                        if (btnSwarmUndo) {
+                          btnSwarmUndo.addEventListener("click", () => undoSnapshotById(event.snapshot_id, swarmUndoMsg, btnSwarmUndo));
+                        }
+                        refreshChangedFilesBar();
+                      }, 0);
+                    }
+                  } else if (event.agent === "verifier") {
+                    const isVerifying = event.action === "verifying";
+                    const isPassed = event.verdict === "PASSED";
+                    const badgeClass = isVerifying ? "coder" : (isPassed ? "verifier" : "rejected");
+                    const badgeText = isVerifying ? "KONTROL EDİLİYOR" : (isPassed ? "PASSED" : "FAILED");
+                    card.innerHTML = `
+                      <div class="swarm-header">
+                        <span class="swarm-badge ${badgeClass}">DENETÇİ · VERIFIER</span>
+                        <span style="font-size:0.70rem; font-weight:600; font-family:var(--font-code); color:${isVerifying ? 'var(--accent-primary)' : (isPassed ? 'var(--accent-green)' : 'var(--accent-red)')};">${badgeText}</span>
+                      </div>
+                      <div style="font-size:0.82rem; color:var(--text-main);">${escapeHtml(event.message)}</div>
+                      ${event.error ? `<pre style="background:rgba(248,113,113,0.08); border:1px solid rgba(248,113,113,0.2); color:#fca5a5; padding:6px; border-radius:4px; font-size:0.74rem; font-family:var(--font-code); margin-top:4px; white-space:pre-wrap;">${escapeHtml(event.error)}</pre>` : ''}
+                    `;
+                  } else if (event.error) {
+                    card.innerHTML = `<div style="color:var(--accent-red); font-size:0.80rem;">⚠️ Swarm Hatası: ${escapeHtml(event.error)}</div>`;
+                  } else if (event.status) {
+                    const isFail = event.status === "FAILED" || event.status === "ROLLED_BACK";
+                    card.innerHTML = `
+                      <div style="display:flex; align-items:center; gap:6px; font-size:0.80rem; font-weight:500; color:${isFail ? 'var(--accent-amber)' : 'var(--accent-green)'};">
+                        <span>${escapeHtml(event.message)}</span>
+                      </div>
+                    `;
+                  } else {
+                    continue;
+                  }
+
+                  eventsContainer.appendChild(card);
+                  chatHistory.scrollTop = chatHistory.scrollHeight;
+                } catch (e) {}
+              }
+            }
+            if (done) break;
           }
         }
       } else if (mode === "agent") {
@@ -806,48 +1112,65 @@ document.addEventListener("DOMContentLoaded", () => {
           smartScroll(chatHistory);
         }
 
-        const response = await fetch(`${API_BASE}/agent/chat/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: query, max_tokens: 400 })
-        });
+        try {
+          const response = await fetch(`${API_BASE}/agent/chat/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: query, max_tokens: 400 })
+          });
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
+          if (!response.ok) {
+            accumulatedText = `⚠️ Sunucu hatası (HTTP ${response.status}).`;
+          } else {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let agentBuffer = "";
+            let agentDone = false;
 
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const dataStr = line.slice(6).trim();
-              if (dataStr === "[DONE]") {
-                break;
+            while (!agentDone) {
+              const { value, done } = await reader.read();
+              if (done) {
+                agentBuffer += decoder.decode();
+              } else {
+                agentBuffer += decoder.decode(value, { stream: true });
               }
-              try {
-                const parsed = JSON.parse(dataStr);
-                if (parsed.token) {
-                  if (finalThinkTime === null) {
-                    finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
-                    clearInterval(timerInterval);
+
+              const lines = agentBuffer.split("\n");
+              agentBuffer = done ? "" : (lines.pop() || "");
+
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  const dataStr = line.slice(6).trim();
+                  if (dataStr === "[DONE]") {
+                    agentDone = true;
+                    break;
                   }
-                  accumulatedText += parsed.token;
-                  if (!renderScheduled) {
-                    renderScheduled = true;
-                    requestAnimationFrame(renderAgentUI);
-                  }
+                  try {
+                    const parsed = JSON.parse(dataStr);
+                    if (parsed.token) {
+                      if (finalThinkTime === null) {
+                        finalThinkTime = ((performance.now() - startTime) / 1000).toFixed(1);
+                        clearInterval(timerInterval);
+                      }
+                      accumulatedText += parsed.token;
+                      if (!renderScheduled) {
+                        renderScheduled = true;
+                        requestAnimationFrame(renderAgentUI);
+                      }
+                    } else if (parsed.error) {
+                      accumulatedText = `⚠️ Hata: ${parsed.error}`;
+                    }
+                  } catch (e) {}
                 }
-              } catch (e) {}
+              }
+              if (done) break;
             }
           }
+        } finally {
+          clearInterval(timerInterval);
+          isStreaming = false;
+          renderAgentUI();
         }
-        clearInterval(timerInterval);
-        isStreaming = false;
-        renderAgentUI();
       } else {
         const res = await fetch(`${API_BASE}/rag/ask`, {
           method: "POST",
@@ -857,10 +1180,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (res.ok) {
           const data = await res.json();
           appendMessage("ai", data.answer);
+        } else {
+          appendMessage("ai", `⚠️ RAG sorgusu başarısız oldu (HTTP ${res.status}).`);
         }
       }
     } catch (err) {
       appendMessage("ai", `⚠️ Sunucuya bağlanılamadı (${err.message}). API sunucusunun http://127.0.0.1:8000 üzerinde çalıştığından emin olun.`);
+    } finally {
+      isChatSubmitting = false;
+      if (sendBtn) sendBtn.disabled = false;
     }
   });
 });

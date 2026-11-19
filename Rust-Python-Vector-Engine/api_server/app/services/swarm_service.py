@@ -255,26 +255,42 @@ class SwarmOrchestrator:
             search_block = coder_decision.get("search")
             replace_block = coder_decision.get("replace")
 
-            if edits_list and isinstance(edits_list, list) and len(edits_list) > 1 and multi_diff_tool:
+            import shlex
+            from api_server.app.services.diff_snapshot_service import diff_snapshot_service
+            from api_server.app.tools.devops import _get_base_workspace
+
+            edited_files: List[str] = []
+            if edits_list and isinstance(edits_list, list) and len(edits_list) >= 1 and multi_diff_tool:
+                snap = diff_snapshot_service.capture_snapshot("apply_multi_diff", {"edits": edits_list})
                 patch_res = multi_diff_tool.execute(edits=edits_list)
+                edited_files = [item["path"] for item in edits_list if isinstance(item, dict) and item.get("path")]
                 yield {
                     "agent": SwarmAgentRole.CODER,
                     "action": "multi_patched",
                     "files_count": len(edits_list),
                     "result": patch_res,
+                    "snapshot_id": snap["snapshot_id"] if snap else None,
+                    "diff_preview": snap.get("diff_preview") if snap else None,
                     "message": f"Geliştirici atomik çoklu yama uyguladı: {patch_res}"
                 }
             elif target_file and search_block and replace_block and diff_tool:
+                snap = diff_snapshot_service.capture_snapshot(
+                    "apply_diff",
+                    {"path": target_file, "search_block": search_block, "replace_block": replace_block}
+                )
                 patch_res = diff_tool.execute(
                     path=target_file,
                     search_block=search_block,
                     replace_block=replace_block
                 )
+                edited_files = [str(target_file).strip()]
                 yield {
                     "agent": SwarmAgentRole.CODER,
                     "action": "patched",
                     "target_file": target_file,
                     "result": patch_res,
+                    "snapshot_id": snap["snapshot_id"] if snap else None,
+                    "diff_preview": snap.get("diff_preview") if snap else None,
                     "message": f"Geliştirici yama uyguladı: {patch_res}"
                 }
             else:
@@ -292,19 +308,21 @@ class SwarmOrchestrator:
             }
 
             verification_output = ""
-            if term_tool and target_file and any(str(target_file).endswith(ext) for ext in [".py", ".rs"]):
-                t_file = str(target_file).strip()
-                if t_file.endswith(".py"):
-                    verification_output = term_tool.execute(f"python3 -m py_compile {t_file}")
-                elif t_file.endswith(".rs"):
-                    if os.path.exists("Cargo.toml"):
-                        verification_output = term_tool.execute("cargo check --quiet")
-                    elif os.path.exists(t_file):
-                        verification_output = term_tool.execute(f"rustc --emit=metadata {t_file}")
-                    else:
-                        verification_output = ""
+            checked_file = target_file or (edited_files[0] if edited_files else None)
+            ws_root = _get_base_workspace()
+            if term_tool and edited_files:
+                for ef in edited_files:
+                    t_file = str(ef).strip()
+                    safe_arg = shlex.quote(t_file)
+                    if t_file.endswith(".py"):
+                        verification_output += term_tool.execute(command=f"python3 -m py_compile {safe_arg}") + "\n"
+                    elif t_file.endswith(".rs"):
+                        if os.path.exists(os.path.join(ws_root, "Cargo.toml")):
+                            verification_output += term_tool.execute(command="cargo check --quiet") + "\n"
+                        elif os.path.exists(os.path.join(ws_root, t_file)):
+                            verification_output += term_tool.execute(command=f"rustc --emit=metadata {safe_arg}") + "\n"
 
-            parsed_err = self.parse_compiler_errors(verification_output, target_file)
+            parsed_err = self.parse_compiler_errors(verification_output, checked_file)
             if parsed_err["has_error"]:
                 error_context = parsed_err
                 err_summary = f"{parsed_err.get('message')} ({parsed_err.get('file')}:{parsed_err.get('line', '?')})"
@@ -332,10 +350,15 @@ class SwarmOrchestrator:
                 "status": "ROLLED_BACK",
                 "message": f"Swarm {max_correction_loops} düzeltme denemesinde hatayı çözemedi, çalışma alanı güvenle geri alındı."
             }
+        elif not passed:
+            yield {
+                "status": "FAILED",
+                "message": f"Swarm {max_correction_loops} düzeltme denemesinde doğrulamadan geçemedi."
+            }
         else:
             yield {
                 "status": "COMPLETED",
-                "message": "Swarm görevi başarıyla tamamlandı (Sıfır hata ile doğrulandı)."
+                "message": "Swarm görevi başarıyla tamamlandı ve doğrulandı."
             }
 
 

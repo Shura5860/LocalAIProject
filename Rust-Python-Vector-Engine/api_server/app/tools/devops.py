@@ -15,9 +15,10 @@ def _get_base_workspace() -> str:
 
 
 def _validate_safe_path(path: str) -> str:
-    """Yapay zekanın proje klasörü dışına çıkmasını engelleyen güvenlik sandbox'ı."""
-    base_ws = os.path.abspath(_get_base_workspace())
-    full_path = os.path.abspath(os.path.join(base_ws, path)) if not os.path.isabs(path) else os.path.abspath(path)
+    """Yapay zekanın proje klasörü dışına çıkmasını (symlink dahil) engelleyen güvenlik sandbox'ı."""
+    base_ws = os.path.realpath(_get_base_workspace())
+    raw_full = os.path.join(base_ws, path) if not os.path.isabs(path) else path
+    full_path = os.path.realpath(raw_full)
     try:
         common = os.path.commonpath([base_ws, full_path])
     except ValueError:
@@ -295,7 +296,8 @@ def git_diff(file_path: str = "") -> str:
     try:
         cmd = ["git", "diff"]
         if file_path:
-            cmd.append(file_path)
+            safe_target = _validate_safe_path(file_path)
+            cmd.extend(["--", safe_target])
         res = subprocess.run(
             cmd,
             cwd=_get_base_workspace(),

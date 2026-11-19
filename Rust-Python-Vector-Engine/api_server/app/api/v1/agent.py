@@ -68,11 +68,14 @@ from api_server.app.schemas.agent import (
     ReActChatResponse,
     ActionDecisionRequest,
     ActionDecisionResponse,
+    UndoChangeRequest,
+    UndoChangeResponse,
     SwarmRequest,
     SwarmResponse
 )
 from api_server.app.services.react_agent_service import react_agent_service
 from api_server.app.services.swarm_service import swarm_orchestrator
+from api_server.app.services.diff_snapshot_service import diff_snapshot_service
 
 @router.post("/react", response_model=ReActChatResponse)
 def react_agent_chat(req: ReActChatRequest):
@@ -126,6 +129,21 @@ def handle_action_decision(req: ActionDecisionRequest):
         return ActionDecisionResponse(**res)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Karar uygulama hatası: {str(e)}")
+
+
+@router.get("/changes")
+def list_session_changes():
+    """Oturum boyunca ajan tarafından yapılan dosya değişikliklerini ve diff istatistiklerini listeler."""
+    return {"changes": diff_snapshot_service.list_changes()}
+
+
+@router.post("/changes/undo", response_model=UndoChangeResponse)
+def undo_session_change(req: UndoChangeRequest):
+    """Tek tıkla geri alma (Undo): Seçilen snapshot'taki tüm dosya değişikliklerini orijinal haline döndürür."""
+    res = diff_snapshot_service.undo_snapshot(req.snapshot_id)
+    if res["status"] == "ERROR":
+        raise HTTPException(status_code=404, detail=res["message"])
+    return UndoChangeResponse(**res)
 
 
 @router.post("/swarm", response_model=SwarmResponse)

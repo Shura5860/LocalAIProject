@@ -22,12 +22,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential
           python -m pip install --upgrade pip
-          pip install maturin
+          pip install maturin "httpx[http2]"
 
       - name: Build Native Rust Vector Engine
         run: |
@@ -65,7 +68,7 @@ jobs:
         with:
           body_path: RELEASE_NOTES.md
           files: |
-            dist/aura-linux-x86_64.tar.gz
+            dist/aura-*.tar.gz
           draft: false
           prerelease: false
 

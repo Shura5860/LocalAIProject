@@ -56,7 +56,7 @@ class ProductionInferenceEngine:
 
         import re
         # ChatML bloklarını ayıkla: <|im_start|>(role)\n(content)<|im_end|>
-        blocks = re.findall(r"(<\|im_start\|>(system|user|assistant|tool)[\s\S]*?<\|im_end\|>)", prompt)
+        blocks = re.findall(r"(<\|im_start\|>(system|user|assistant|tool|observation)[\s\S]*?<\|im_end\|>)", prompt)
         if not blocks or len(blocks) < 3:
             return cls._truncate_prompt_sliding(prompt, max_chars=max_chars)
 
@@ -92,8 +92,9 @@ class ProductionInferenceEngine:
 
         archive_block = f"<|im_start|>system\n[ARŞİVLENEN GEÇMİŞ BAĞLAM]\n{compressed_text}\n[ARŞİV SONU]<|im_end|>"
         recent_blocks_str = "\n".join(b[1] for b in recent_turns)
+        trailing = "\n<|im_start|>assistant\n" if prompt.rstrip().endswith("<|im_start|>assistant") else ""
 
-        return f"{system_block}\n{archive_block}\n{recent_blocks_str}"
+        return f"{system_block}\n{archive_block}\n{recent_blocks_str}{trailing}"
 
     def _ensure_model_loaded(self) -> Llama:
         current_path = model_service.get_active_model_path()
@@ -150,14 +151,18 @@ class ProductionInferenceEngine:
                 verbose=False
             )
         except Exception as e:
-            logger.warning(f"GPU katmanlama başlatılamadı ({e}), güvenli CPU moduna dönülüyor.")
+            cpu_ctx = min(ctx_size, 4096)
+            logger.warning(f"GPU katmanlama başlatılamadı ({e}), güvenli CPU moduna dönülüyor (n_ctx={cpu_ctx}).")
             self._llm = Llama(
                 model_path=current_path,
-                n_ctx=ctx_size,
+                n_ctx=cpu_ctx,
                 n_threads=safe_threads,
                 n_gpu_layers=0,
+                type_k=kv_type,
+                type_v=kv_type,
                 verbose=False
             )
+            ctx_size = cpu_ctx
 
         # LlamaRAMCache ile Stateful KV Prefix Caching entegrasyonu (Ortak Prompt Prefix Hızlandırması)
         cache_size_mb = int(os.environ.get("LLAMA_CACHE_MB", "512"))

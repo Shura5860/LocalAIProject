@@ -97,8 +97,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$PROJECT_ROOT
-ExecStart=$PROJECT_ROOT/bin/aura serve --port 8000
+WorkingDirectory="$PROJECT_ROOT"
+ExecStart="$PROJECT_ROOT/bin/aura" serve --port 8000
 Restart=on-failure
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
@@ -106,6 +106,8 @@ Environment=PYTHONUNBUFFERED=1
 [Install]
 WantedBy=default.target
 EOF
+
+systemctl --user daemon-reload 2>/dev/null || true
 
 echo -e "   ${GREEN}✓ $SYSTEMD_USER_DIR/aura.service oluşturuldu.${RESET}"
 echo -e "   Daemon'ı açılışta başlatmak için:"

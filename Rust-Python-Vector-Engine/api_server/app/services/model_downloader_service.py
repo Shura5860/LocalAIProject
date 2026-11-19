@@ -45,7 +45,8 @@ class ModelDownloaderService:
                 }
             ]
 
-        url = f"https://huggingface.co/api/models?search={query}&filter=gguf&limit={limit}&full=true"
+        from urllib.parse import quote
+        url = f"https://huggingface.co/api/models?search={quote(query)}&filter=gguf&limit={int(limit)}&full=true"
         try:
             with httpx.Client(timeout=self.client_timeout) as client:
                 res = client.get(url)
@@ -77,8 +78,23 @@ class ModelDownloaderService:
         Hugging Face üzerinden GGUF modelini canlı SSE akışıyla indirir.
         Kesintiye dayanıklıdır (Resume destekler) ve tamamlandığında kataloğa ekler.
         """
-        target_id = model_id or filename.lower().replace(".gguf", "").replace("-instruct", "")
-        dest_path = os.path.join(model_service.models_dir, filename)
+        import re
+        from urllib.parse import quote
+
+        safe_filename = os.path.basename(filename or "")
+        if not safe_filename or safe_filename != filename or ".." in safe_filename:
+            yield {"status": "error", "message": "Geçersiz veya güvensiz model dosya adı."}
+            return
+        if not re.match(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", repo or ""):
+            yield {"status": "error", "message": "Geçersiz Hugging Face repo formatı."}
+            return
+
+        target_id = model_id or safe_filename.lower().replace(".gguf", "").replace("-instruct", "")
+        models_dir_real = os.path.realpath(model_service.models_dir)
+        dest_path = os.path.realpath(os.path.join(models_dir_real, safe_filename))
+        if os.path.commonpath([models_dir_real, dest_path]) != models_dir_real:
+            yield {"status": "error", "message": "Güvenlik İhlali: Hedef yol model dizini dışındadır."}
+            return
         part_path = dest_path + ".part"
 
         # 1. Eğer model zaten tam olarak inmişse
@@ -135,13 +151,16 @@ class ModelDownloaderService:
                         return
 
                     content_length = response.headers.get("Content-Length")
-                    total_bytes = int(content_length) + downloaded_bytes if content_length else 0
+                    is_resumed = response.status_code == 206 and downloaded_bytes > 0
+                    if not is_resumed:
+                        downloaded_bytes = 0
+                    total_bytes = (int(content_length) + downloaded_bytes) if content_length else 0
                     total_gb = round(total_bytes / (1024 ** 3), 2) if total_bytes else 0.0
 
                     start_time = time.time()
                     last_emit_time = start_time
                     bytes_since_last = 0
-                    mode = "ab" if downloaded_bytes > 0 else "wb"
+                    mode = "ab" if is_resumed else "wb"
 
                     with open(part_path, mode) as f:
                         for chunk in response.iter_bytes(chunk_size=1024 * 1024):  # 1MB Chunks

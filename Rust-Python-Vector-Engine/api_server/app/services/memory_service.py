@@ -17,9 +17,10 @@ class MemoryService:
         self._ensure_profile_exists()
 
     @property
-    def embedder(self) -> SentenceTransformer:
+    def embedder(self):
         if self._embedder is None:
-            self._embedder = SentenceTransformer(self.embedding_model_name)
+            from api_server.app.services.rag_service import rag_service
+            self._embedder = rag_service.embedder
         return self._embedder
 
     def _ensure_profile_exists(self):
@@ -139,7 +140,8 @@ class MemoryService:
         """
         Proje kurallarını (.cursorrules, .aura/rules, .aura/rules.md, project_rules.md) tarar ve yükler.
         """
-        ws = workspace_path or os.environ.get("AURA_WORKSPACE_PATH") or os.getcwd()
+        from api_server.app.tools.devops import _get_base_workspace
+        ws = workspace_path or _get_base_workspace()
         candidate_files = [
             os.path.join(ws, ".cursorrules"),
             os.path.join(ws, ".aura", "rules"),

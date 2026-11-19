@@ -32,10 +32,25 @@ class RagService:
             if os.environ.get("TESTING", "0") == "1":
                 # Test ortamında model indirmesini atla
                 class DummyEmbedder:
+                    _STOP = {"ve", "ile", "bir", "bu", "su", "ben", "sen", "nasıl", "nedir", "ne", "için", "çok", "mi", "mı", "mu", "mü", "the", "and", "is", "of", "to", "in", "a"}
+
+                    def _vec_for_text(self, s: str) -> np.ndarray:
+                        import zlib
+                        vec = np.zeros(384, dtype=np.float32)
+                        tokens = set(t for t in re.findall(r"[\w\d]+", str(s).lower()) if t not in self._STOP and len(t) > 1)
+                        for tok in tokens:
+                            h = zlib.crc32(tok.encode("utf-8"))
+                            vec[h % 384] += 1.0 if (h & 1) else -1.0
+                            for i in range(max(0, len(tok) - 3)):
+                                gh = zlib.crc32(tok[i:i+4].encode("utf-8"))
+                                vec[gh % 384] += 0.8 if (gh & 1) else -0.8
+                        norm = float(np.linalg.norm(vec))
+                        return (vec / norm) if norm > 0.0 else np.full(384, 0.05, dtype=np.float32)
+
                     def encode(self, texts, convert_to_numpy=True):
-                        count = len(texts) if isinstance(texts, list) else 1
-                        v = np.full((count, 384), 0.05, dtype=np.float32)
-                        return v if isinstance(texts, list) else v[0]
+                        if isinstance(texts, list):
+                            return np.vstack([self._vec_for_text(t) for t in texts]).astype(np.float32)
+                        return self._vec_for_text(texts)
                 self._embedder = DummyEmbedder()
             else:
                 from sentence_transformers import SentenceTransformer
@@ -160,6 +175,22 @@ class RagService:
             self.save_sparse_index(BM25_FILE)
         return len(documents)
 
+    def remove_from_sparse_index(self, doc_id: int) -> None:
+        """Silinen bir dokümanı BM25 seyrek indeksinden temizler."""
+        self._doc_store.pop(doc_id, None)
+        self._doc_lengths.pop(doc_id, None)
+        empty_terms = []
+        for term, postings in self._inverted_index.items():
+            postings.pop(doc_id, None)
+            if not postings:
+                empty_terms.append(term)
+        for term in empty_terms:
+            self._inverted_index.pop(term, None)
+        if self._doc_lengths:
+            self._avg_doc_len = sum(self._doc_lengths.values()) / len(self._doc_lengths)
+        else:
+            self._avg_doc_len = 0.0
+
     def save_sparse_index(self, file_path: str = BM25_FILE) -> None:
         """BM25 seyrek indeksini ve doküman metin deposunu diske kalıcı olarak yazar."""
         try:
@@ -251,6 +282,12 @@ class RagService:
 
         # 2. Sparse (BM25 Anahtar Kelime) Araması
         raw_sparse = self._sparse_bm25_search(user_query, top_k=top_k * 2)
+        if filter_key and filter_value is not None:
+            raw_sparse = [
+                (doc_id, sc)
+                for doc_id, sc in raw_sparse
+                if str(self._doc_store.get(doc_id, {}).get(filter_key, "")) == str(filter_value)
+            ]
         sparse_ranked_ids = [doc_id for doc_id, _ in raw_sparse]
 
         # 3. Reciprocal Rank Fusion (RRF) - Skor Füzyonu
@@ -319,7 +356,8 @@ class RagService:
         """
         import ast
 
-        ws = workspace_path or os.environ.get("AURA_WORKSPACE_PATH") or os.getcwd()
+        from api_server.app.tools.devops import _get_base_workspace
+        ws = workspace_path or _get_base_workspace()
         if not os.path.exists(ws):
             return "Çalışma alanı bulunamadı."
 

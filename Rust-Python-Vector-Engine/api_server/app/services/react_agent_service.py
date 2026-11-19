@@ -97,7 +97,8 @@ class ReActAgentService:
             path = tool_args.get("path")
             if path:
                 clean_path = str(path).strip()
-                ws = os.environ.get("AURA_WORKSPACE_PATH") or os.getcwd()
+                from api_server.app.tools.devops import _get_base_workspace
+                ws = _get_base_workspace()
                 abs_path = os.path.abspath(clean_path) if os.path.isabs(clean_path) else os.path.abspath(os.path.join(ws, clean_path))
 
                 if not os.path.exists(abs_path):
@@ -116,12 +117,17 @@ class ReActAgentService:
                         snippet_files = all_files[:6]
                         return False, f"[Halüsinasyon Kalkanı]: '{clean_path}' dosyası bulunamadı. Çalışma alanında mevcut bazı dosyalar: {snippet_files}. Lütfen dosya adını kontrol edin."
 
-        # 2. Dosya yazma kontrolü: Klasör var mı?
+        # 2. Dosya yazma kontrolü: Güvenlik sınırı ve klasör doğrulaması
         if tool_name == "write_file":
             path = tool_args.get("path")
             if path:
                 clean_path = str(path).strip()
-                parent_dir = os.path.dirname(clean_path)
+                from api_server.app.tools.devops import _validate_safe_path
+                try:
+                    safe_abs_path = _validate_safe_path(clean_path)
+                except PermissionError as pe:
+                    return False, f"[Güvenlik Kalkanı]: {str(pe)}"
+                parent_dir = os.path.dirname(safe_abs_path)
                 if parent_dir and not os.path.exists(parent_dir):
                     try:
                         os.makedirs(parent_dir, exist_ok=True)
@@ -154,7 +160,8 @@ class ReActAgentService:
         import json
 
         try:
-            ws = os.environ.get("AURA_WORKSPACE_PATH") or os.getcwd()
+            from api_server.app.tools.devops import _get_base_workspace
+            ws = _get_base_workspace()
             traces_dir = os.path.join(ws, ".aura", "traces")
             os.makedirs(traces_dir, exist_ok=True)
 
@@ -295,21 +302,24 @@ class ReActAgentService:
 
                 # HUMAN-IN-THE-LOOP (HITL) Güvenlik & İzin Kontrolü
                 if require_approval and is_approval_required(tool_name, tool_args):
+                    from api_server.app.services.diff_snapshot_service import diff_snapshot_service
                     action_id = str(uuid.uuid4())
                     pending_desc = f"'{tool_name}' aracı parametrelerle çalıştırılmak isteniyor: {json.dumps(tool_args, ensure_ascii=False)}"
-                    
+                    diff_preview = diff_snapshot_service.build_diff_preview(tool_name, tool_args)
+
                     pending_info = {
                         "action_id": action_id,
                         "tool": tool_name,
                         "args": tool_args,
                         "description": pending_desc,
+                        "diff_preview": diff_preview,
                         "user_query": user_query,
                         "step": step,
                         "thought": thought,
                         "trace": trace
                     }
                     self.pending_actions[action_id] = pending_info
-                    
+
                     trace.append({
                         "step_number": step,
                         "thought": thought or f"'{tool_name}' aracını çalıştırmak için kullanıcıdan onay bekleniyor.",
@@ -317,7 +327,7 @@ class ReActAgentService:
                         "action_input": tool_args,
                         "observation": "⏳ [ONAY BEKLENİYOR] Bu işlem diski veya sistemi etkilediği için kullanıcının açık onayı bekleniyor."
                     })
-                    
+
                     return {
                         "query": user_query,
                         "final_answer": f"⚠️ Güvenlik & İnsan Onayı: Ajan **[{tool_name}]** aracını çalıştırmak istiyor ancak bu eylem kritik kategorisindedir. Devam etmek için onayınız gerekiyor.",
@@ -328,7 +338,8 @@ class ReActAgentService:
                             "action_id": action_id,
                             "tool": tool_name,
                             "args": tool_args,
-                            "description": pending_desc
+                            "description": pending_desc,
+                            "diff_preview": diff_preview
                         }
                     }
 
@@ -337,8 +348,11 @@ class ReActAgentService:
                 if not is_valid:
                     observation = hall_err
                 else:
+                    from api_server.app.services.diff_snapshot_service import diff_snapshot_service, FILE_EDIT_TOOLS
                     tool_instance = tool_registry.get_tool(tool_name)
                     if tool_instance:
+                        if tool_name in FILE_EDIT_TOOLS:
+                            diff_snapshot_service.capture_snapshot(tool_name, tool_args)
                         try:
                             observation = tool_instance.execute(**tool_args)
                         except Exception as e:
@@ -485,14 +499,17 @@ class ReActAgentService:
                 yield {"type": "action", "tool": tool_name, "args": tool_args, "step": step}
 
                 # HITL İzin Kontrolü
+                from api_server.app.services.diff_snapshot_service import diff_snapshot_service, FILE_EDIT_TOOLS
                 if require_approval and is_approval_required(tool_name, tool_args):
                     action_id = str(uuid.uuid4())
                     pending_desc = f"'{tool_name}' aracı parametrelerle çalıştırılmak isteniyor: {json.dumps(tool_args, ensure_ascii=False)}"
+                    diff_preview = diff_snapshot_service.build_diff_preview(tool_name, tool_args)
                     pending_info = {
                         "action_id": action_id,
                         "tool": tool_name,
                         "args": tool_args,
                         "description": pending_desc,
+                        "diff_preview": diff_preview,
                         "user_query": user_query,
                         "step": step,
                         "thought": thought,
@@ -507,14 +524,20 @@ class ReActAgentService:
                     yield {"type": "done", "status": "WAITING_APPROVAL"}
                     return
 
-                tool_instance = tool_registry.get_tool(tool_name)
                 # Halüsinasyon Kalkanı Doğrulaması (Self-Reflection Guard)
                 is_valid, hall_err = self.validate_action_against_hallucination(tool_name, tool_args)
+                snapshot_id = None
+                diff_preview = None
                 if not is_valid:
                     observation = hall_err
                 else:
                     tool_instance = tool_registry.get_tool(tool_name)
                     if tool_instance:
+                        if tool_name in FILE_EDIT_TOOLS:
+                            snap = diff_snapshot_service.capture_snapshot(tool_name, tool_args)
+                            if snap:
+                                snapshot_id = snap["snapshot_id"]
+                                diff_preview = snap.get("diff_preview")
                         try:
                             observation = tool_instance.execute(**tool_args)
                         except Exception as e:
@@ -522,7 +545,12 @@ class ReActAgentService:
                     else:
                         observation = f"Hata: '{tool_name}' adında bir araç bulunamadı."
 
-                yield {"type": "observation", "tool": tool_name, "observation": observation, "step": step}
+                obs_event = {"type": "observation", "tool": tool_name, "observation": observation, "step": step}
+                if snapshot_id:
+                    obs_event["snapshot_id"] = snapshot_id
+                if diff_preview:
+                    obs_event["diff_preview"] = diff_preview
+                yield obs_event
                 trace.append({
                     "step_number": step,
                     "thought": thought,
@@ -553,6 +581,35 @@ class ReActAgentService:
         yield {"type": "final_answer", "content": f"Ajan belirlenen maksimum adım kısıtına ({max_steps}) ulaştı.", "step": max_steps}
         yield {"type": "done", "status": "MAX_STEPS_REACHED"}
 
+    @staticmethod
+    def _extract_balanced_json(text: str, start_idx: int) -> Optional[str]:
+        """İç içe süslü parantez ve string kaçışlarını doğru ayrıştırarak tam JSON nesnesini çıkarır."""
+        brace_start = text.find("{", start_idx)
+        if brace_start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        for idx in range(brace_start, len(text)):
+            ch = text[idx]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\" and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if not in_string:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[brace_start : idx + 1]
+        return None
+
     def _parse_react_output(self, text: str, user_query: str, step: int):
         thought = None
         action_data = None
@@ -563,23 +620,30 @@ class ReActAgentService:
         if thought_match:
             thought = thought_match.group(1).strip()
 
-        # Action ayıkla (JSON, markdown code blockları da desteklenir)
-        action_match = re.search(r"Action:\s*(?:```(?:json)?\s*)?(\{.*?\})(?:\s*```)?", text, re.DOTALL)
-        if not action_match:
-            # Fallback: metin içindeki herhangi bir {"tool": ...} yapısını yakala
-            action_match = re.search(r"(\{\s*\"tool\"\s*:\s*\"[^\"]+\".*?\})", text, re.DOTALL)
+        # Action ayıkla (İç içe JSON destekli dengeli parantez çıkarıcı)
+        candidate_json = None
+        action_header = re.search(r"Action:\s*(?:```(?:json)?\s*)?", text, re.DOTALL)
+        if action_header:
+            candidate_json = self._extract_balanced_json(text, action_header.end())
+        if not candidate_json:
+            tool_hint = re.search(r'\{\s*"tool"\s*:\s*"[^"]+"', text, re.DOTALL)
+            if tool_hint:
+                candidate_json = self._extract_balanced_json(text, tool_hint.start())
 
-        if action_match:
+        if candidate_json:
             try:
-                action_data = json.loads(action_match.group(1).strip())
+                action_data = json.loads(candidate_json.strip())
                 if isinstance(action_data, dict) and "tool" in action_data:
                     return thought, action_data, None
             except Exception:
                 pass
 
-        # Final Answer ayıkla (Eğer Action belirtilmemişse ve gerçekten soru doğrudan cevaplanabiliyorsa)
+        # Final Answer ayıkla (1. adımda araç gerektiren açık taleplerde erken atlamayı önle; 2+ adımda kabul et)
         final_match = re.search(r"Final Answer:\s*(.*)", text, re.DOTALL)
-        if final_match and not any(w in user_query.lower() for w in ["oku", "analiz et", "çalıştır", "indir", "http://", "https://"]):
+        requires_first_step_tool = step == 1 and any(
+            w in user_query.lower() for w in ["oku", "analiz et", "çalıştır", "indir", "http://", "https://"]
+        )
+        if final_match and not requires_first_step_tool:
             final_answer = final_match.group(1).strip()
             # Kod Kurtarma Güvenlik Ağı: Eğer model kodu Thought içine yazıp Final Answer'a sadece açıklama koyduysa
             if thought and "```" in thought and "```" not in final_answer:
@@ -630,12 +694,6 @@ class ReActAgentService:
                 thought = "İnternette güncel arama yapmalıyım."
                 action_data = {"tool": "web_search", "args": {"query": user_query}}
                 return thought, action_data, None
-            elif any(w in q for w in ["cargo check", "cargo build", "pytest"]):
-                cmd = re.search(r"(cargo check|cargo build|pytest[^\n]*)", user_query)
-                if cmd:
-                    thought = f"Terminalde derleme/test komutunu çalıştırmalıyım: {cmd.group(0)}"
-                    action_data = {"tool": "run_terminal_command", "args": {"command": cmd.group(0)}}
-                    return thought, action_data, None
 
         return thought, None, text
 
@@ -666,12 +724,26 @@ class ReActAgentService:
 
         # Onaylandıysa eylemi yürüt
         record_audit_log(tool_name, tool_args, approved=True, reason="Kullanıcı onay verdi.")
+        from api_server.app.services.diff_snapshot_service import diff_snapshot_service, FILE_EDIT_TOOLS
         tool_instance = tool_registry.get_tool(tool_name)
+
+        snapshot_id = None
+        diff_preview = pending.get("diff_preview")
 
         is_valid, hall_err = self.validate_action_against_hallucination(tool_name, tool_args)
         if not is_valid:
             exec_res = hall_err
         else:
+            if tool_name in FILE_EDIT_TOOLS:
+                snap = diff_snapshot_service.capture_snapshot(
+                    tool_name,
+                    tool_args,
+                    action_id=action_id,
+                    diff_preview=diff_preview,
+                )
+                if snap:
+                    snapshot_id = snap["snapshot_id"]
+                    diff_preview = snap.get("diff_preview")
             try:
                 if tool_instance:
                     exec_res = tool_instance.execute(**tool_args)
@@ -684,7 +756,9 @@ class ReActAgentService:
             "action_id": action_id,
             "status": "EXECUTED",
             "result": exec_res,
-            "message": f"'{tool_name}' aracı kullanıcı onayıyla başarıyla çalıştırıldı."
+            "message": f"'{tool_name}' aracı kullanıcı onayıyla başarıyla çalıştırıldı.",
+            "snapshot_id": snapshot_id,
+            "diff_preview": diff_preview
         }
 
 react_agent_service = ReActAgentService()

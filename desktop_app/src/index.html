@@ -15,7 +15,7 @@
 
 <div class="app-container">
   <!-- 1. Custom Frameless Titlebar (Cursor / Linear Style) -->
-  <header class="custom-titlebar" id="titlebar">
+  <header class="custom-titlebar" id="titlebar" data-tauri-drag-region>
     <div class="titlebar-brand">
       <div class="brand-dot" title="Çekirdek Çevrimiçi"></div>
       <span>AURA Studio</span>
@@ -91,7 +91,7 @@
         
         <div id="workspace-unbound-box" style="padding: 0 4px;">
           <div style="display: flex; gap: 4px;">
-            <input type="text" id="workspace-input-path" placeholder="/home/shura/Projects/..." style="flex:1; background:var(--bg-surface); border:1px solid var(--border-hairline); color:var(--text-main); font-size:0.74rem; padding:4px 7px; border-radius:4px; outline:none; font-family:var(--font-code);" value="/home/shura/Projects/AIProject">
+            <input type="text" id="workspace-input-path" placeholder="/path/to/your/project" style="flex:1; background:var(--bg-surface); border:1px solid var(--border-hairline); color:var(--text-main); font-size:0.74rem; padding:4px 7px; border-radius:4px; outline:none; font-family:var(--font-code);" value="">
             <button id="btn-bind-workspace" style="background:var(--bg-surface-elevated); color:var(--text-main); border:1px solid var(--border-hairline); padding:4px 8px; border-radius:4px; font-size:0.72rem; cursor:pointer;" title="Projeyi Bağla">Bağla</button>
           </div>
           <span style="font-size: 0.68rem; color: var(--text-dim); display:block; margin-top:4px;">Bağlanmadığında genel mod devrededir.</span>
@@ -141,6 +141,14 @@
       <!-- Bottom Chat Input Bar (Raycast / Cursor Composer) -->
       <footer class="chat-input-bar">
         <div class="input-container">
+          <!-- Composer Changed Files & Undo Bar -->
+          <div id="changed-files-bar" class="changed-files-bar">
+            <div class="changed-files-header">
+              <span id="changed-files-title">Değiştirilen Dosyalar (0)</span>
+              <button id="btn-undo-all-changes" class="btn-diff-undo" style="padding: 2px 8px; font-size: 0.69rem;">↩ Tümünü Geri Al</button>
+            </div>
+            <div id="changed-files-list" class="changed-files-list"></div>
+          </div>
           <div class="input-controls">
             <div style="display: flex; align-items: center; gap: 8px;">
               <button class="btn-icon" id="btn-toggle-sidebar" title="Menüyü Aç/Kapat">

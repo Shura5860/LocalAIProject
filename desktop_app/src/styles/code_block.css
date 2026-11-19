@@ -159,3 +159,252 @@ table.markdown-table tr:hover td {
   overflow-x: auto;
   text-align: center;
 }
+
+
+/* ==============================================================================
+   COMPOSER-GRADE UNIFIED DIFF VIEWER & CHANGED FILES BAR (Cursor / Codex Style)
+   ============================================================================== */
+.aura-diff-card {
+  margin: 10px 0;
+  background: #090a0d;
+  border: 1px solid var(--border-elevated, #27272a);
+  border-radius: 7px;
+  overflow: hidden;
+  font-family: var(--font-code);
+}
+
+.aura-diff-file-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: #121318;
+  border-bottom: 1px solid var(--border-subtle, #1f2028);
+  gap: 10px;
+}
+
+.aura-diff-file-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aura-diff-file-path {
+  font-size: 0.78rem;
+  font-weight: 550;
+  color: #e4e4e7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aura-diff-new-badge {
+  font-size: 0.64rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(52, 211, 153, 0.14);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.aura-diff-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.aura-diff-stat-add { color: #34d399; }
+.aura-diff-stat-del { color: #f87171; }
+
+.aura-diff-scroll {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.aura-diff-table {
+  border-collapse: collapse;
+  min-width: 100%;
+  width: max-content;
+  table-layout: auto;
+}
+
+.aura-diff-row td {
+  padding: 1px 8px;
+  vertical-align: top;
+}
+
+.aura-diff-row.add {
+  background: rgba(52, 211, 153, 0.11);
+}
+.aura-diff-row.add .aura-diff-code {
+  color: #a7f3d0;
+}
+.aura-diff-row.add .aura-diff-sign {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.aura-diff-row.del {
+  background: rgba(248, 113, 113, 0.11);
+}
+.aura-diff-row.del .aura-diff-code {
+  color: #fecaca;
+}
+.aura-diff-row.del .aura-diff-sign {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.aura-diff-row.header {
+  background: rgba(96, 165, 250, 0.08);
+  color: #93c5fd;
+  font-size: 0.71rem;
+}
+
+.aura-diff-row.context .aura-diff-code {
+  color: #a1a1aa;
+}
+
+.aura-diff-ln {
+  width: 34px;
+  text-align: right;
+  color: #52525b;
+  user-select: none;
+  font-size: 0.69rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.aura-diff-sign {
+  width: 16px;
+  text-align: center;
+  user-select: none;
+  color: #52525b;
+}
+
+.aura-diff-code {
+  white-space: pre;
+  overflow-x: visible;
+  width: auto;
+}
+
+.aura-diff-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #101116;
+  border-top: 1px solid var(--border-subtle, #1f2028);
+  font-family: var(--font-ui);
+}
+
+.btn-diff-apply {
+  background: #10b981;
+  color: #051610;
+  border: none;
+  padding: 5px 12px;
+  border-radius: 5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: filter 0.15s;
+}
+.btn-diff-apply:hover { filter: brightness(1.1); }
+.btn-diff-apply:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-diff-reject {
+  background: transparent;
+  color: #f87171;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: 5px 12px;
+  border-radius: 5px;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: background 0.15s;
+}
+.btn-diff-reject:hover { background: rgba(248, 113, 113, 0.1); }
+
+.btn-diff-undo {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-weight: 550;
+  cursor: pointer;
+  font-size: 0.73rem;
+  transition: background 0.15s;
+}
+.btn-diff-undo:hover { background: rgba(251, 191, 36, 0.22); }
+.btn-diff-undo:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Changed Files Summary Bar (Above Composer Input) */
+.changed-files-bar {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: #111217;
+  border: 1px solid var(--border-hairline, #27272a);
+  border-radius: 7px;
+  font-size: 0.74rem;
+}
+
+.changed-files-bar.visible {
+  display: flex;
+}
+
+.changed-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted, #a1a1aa);
+  font-weight: 550;
+}
+
+.changed-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.changed-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #090a0d;
+  border: 1px solid var(--border-subtle, #27272a);
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-family: var(--font-code);
+  font-size: 0.71rem;
+  color: #e4e4e7;
+}
+
+.changed-file-chip.reverted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.changed-file-chip-undo {
+  background: transparent;
+  border: none;
+  color: #fbbf24;
+  cursor: pointer;
+  font-size: 0.70rem;
+  padding: 0 2px;
+  font-family: var(--font-ui);
+}
+.changed-file-chip-undo:hover {
+  text-decoration: underline;
+}
